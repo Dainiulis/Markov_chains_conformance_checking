@@ -40,7 +40,7 @@ class Markov():
 #jei pirmas, tuomet praleidžiame, nes nėra ką tikrinti
 skip_row = True
 print("index", "problema", "esama veikla", "buvusi veikla", sep="~")
-for i, row in test_df.iterrows():
+for i, row in test_df.iterrows(): 
     if skip_row:
         skip_row = False
         continue
