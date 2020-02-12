@@ -59,6 +59,6 @@ for i, row in test_df.iterrows():
             print(i, "Negalima buvusi veikla", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
         else:
             raise err
-    #print(probability, prev_activity_name, cur_activity_name)
+    #print(probability, prev_activity_name, cur_activity_name)#
     if probability == 0:
         print(i, "veiklos tikimybė yra 0", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
