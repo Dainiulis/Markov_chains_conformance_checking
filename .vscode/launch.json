@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "pythonPath": "C:\\Users\\Dainius\\Anaconda3\\python.exe"
+            "pythonPath": "C:\\Users\\daini\\Anaconda3\\python.exe"
         }
     ]
 }

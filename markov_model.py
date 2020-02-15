@@ -4,12 +4,27 @@ import json
 import re
 from pandas.io.json import json_normalize
 import time
+from logs_parsing.log_loader import read_log_file_as_df
+
+class IllegalMarkovState(Exception):
+    """Išimtis, kuomet esama būsena nerasta perėjimų matricoje"""
+    pass
 
 class Markov():
-    
+    """Klasė inicializuojama naudojant dataframe.
+    Iškart sukuriama perėjimų matrica
+
+    rpa_log_df - jau turimas log dataframe jeigu ne Dataframe, tuomet ValueError išimtis
+    """
     def __init__(self, rpa_log_df):
         #init markov class
-        self.rpa_log = rpa_log_df
+        if isinstance(rpa_log_df, pd.Dataframe):
+            self.rpa_log = rpa_log_df
+        else:
+            raise ValueError("Not pandas dataframe")
+        
+        
+
 
     def create_transition_matrix(self):
         #Create datatable with unique activity names as index
@@ -34,9 +49,19 @@ class Markov():
         print(ft - st)
 
     def get_activity_probability(self, prev_activity_name, cur_activity_name):
-        probability = self.transition_matrix.loc[prev_activity_name, cur_activity_name]
-        return probability
+        try:
+            probability = self.transition_matrix.loc[prev_activity_name, cur_activity_name]
+        except KeyError as err:        
+            if err.args[0] == cur_activity_name:
+                # column not found (invalid current move)
+                raise IllegalMarkovState
+            elif err.args[0] == prev_activity_name:
+                pass
+            else:
+                raise err
 
+
+"""
 #jei pirmas, tuomet praleidžiame, nes nėra ką tikrinti
 skip_row = True
 print("index", "problema", "esama veikla", "buvusi veikla", sep="~")
@@ -46,19 +71,21 @@ for i, row in test_df.iterrows():
         continue
     cur_activity_name = row["ActivityName"]
     prev_activity_name = test_df.loc[i-1, "ActivityName"]
-    try:
-        probability = transition_matrix.loc[prev_activity_name, cur_activity_name]
-    except KeyError as err:
+    # try:
+    #     probability = transition_matrix.loc[prev_activity_name, cur_activity_name]
+    # except KeyError as err:
         
-        if err.args[0] == cur_activity_name:
-            # column not found (invalid current move)
-            print(i, "Negalima esama veikla", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
-            #skip_row = True
-        elif err.args[0] == prev_activity_name:
-            # row index not found (invalid previous move)
-            print(i, "Negalima buvusi veikla", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
-        else:
-            raise err
+    #     if err.args[0] == cur_activity_name:
+    #         # column not found (invalid current move)
+    #         raise AttributeError("Negalima esama veikla")
+    #         #skip_row = True
+    #     elif err.args[0] == prev_activity_name:
+    #         pass
+    #         # row index not found (invalid previous move)
+    #         #print(i, "Negalima buvusi veikla", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
+    #     else:
+    #         raise err
     #print(probability, prev_activity_name, cur_activity_name)#
     if probability == 0:
         print(i, "veiklos tikimybė yra 0", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
+"""
