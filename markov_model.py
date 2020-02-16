@@ -20,14 +20,20 @@ class Markov():
     rpa_log_df - jau turimas log DataFrame jeigu ne DataFrame, tuomet ValueError išimtis
     """
 
+    TRANSITION_MATRICES_PATH = r"Data"
+
     def __init__(self, rpa_log_df):
         # init markov class
         if isinstance(rpa_log_df, pd.DataFrame):
             self.rpa_log = rpa_log_df
-        else:
+        elif rpa_log_df:
             raise ValueError("Not pandas DataFrame")
-
-        self.create_transition_matrix()
+        else:
+            """ 
+            Įvykių žurnalas nepaduotas. Matrica turi būti užkraunama su tiksliu proceso pavadinimu iš pickle failo
+            Užkrovimas vyksta load_transition_matrix(process_name) metodu
+            """
+            pass
 
     def create_transition_matrix(self):
         # Create datatable with unique activity names as index
@@ -71,39 +77,37 @@ class Markov():
         except KeyError as err:
             if err.args[0] == cur_activity_name:
                 # column not found (invalid current move)
-                raise IllegalMarkovStateException()
+                raise IllegalMarkovStateException("Negalima esama veikla")
             elif err.args[0] == prev_activity_name:
-                pass
+                raise IllegalMarkovStateException("Negalima buvusi veikla")
             else:
                 raise err
 
+    def load_transition_matrix(self, process_name = None):
+        """Užkraunama istorinė perėjimų matrica, jeigu ji randama sukurta, kitu atveju sukuriama nauja"""
+        st = time.process_time()
+        if not process_name and isinstance(self.rpa_log, pd.DataFrame):
+            process_name = self.rpa_log.loc[0, "processName"]
+        elif not isinstance(self.rpa_log, pd.DataFrame) and not process_name:
+            raise ValueError("Nėra galimybės užkrauti proceso perėjimų matricos. Neinicializuotas DataFrame arba nepateiktas proceso pavadinimas")
+
+        transition_matrix_path = os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle")
+        if os.path.isfile(transition_matrix_path):
+            self.transition_matrix =  pd.read_pickle(transition_matrix_path)
+            ft = time.process_time()
+            print(f"Užkraunta esama perėjimų matrica. Laikas {ft-st}")
+        else:
+            raise FileNotFoundError("Nerastas pickle failas", transition_matrix_path)
+
     def transition_matrix_to_xlsx(self):
-        self.transition_matrix.to_excel("test.xlsx")
-"""
-#jei pirmas, tuomet praleidžiame, nes nėra ką tikrinti
-skip_row = True
-print("index", "problema", "esama veikla", "buvusi veikla", sep="~")
-for i, row in test_df.iterrows(): 
-    if skip_row:
-        skip_row = False
-        continue
-    cur_activity_name = row["ActivityName"]
-    prev_activity_name = test_df.loc[i-1, "ActivityName"]
-    # try:
-    #     probability = transition_matrix.loc[prev_activity_name, cur_activity_name]
-    # except KeyError as err:
-        
-    #     if err.args[0] == cur_activity_name:
-    #         # column not found (invalid current move)
-    #         raise AttributeError("Negalima esama veikla")
-    #         #skip_row = True
-    #     elif err.args[0] == prev_activity_name:
-    #         pass
-    #         # row index not found (invalid previous move)
-    #         #print(i, "Negalima buvusi veikla", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
-    #     else:
-    #         raise err
-    #print(probability, prev_activity_name, cur_activity_name)#
-    if probability == 0:
-        print(i, "veiklos tikimybė yra 0", "["+cur_activity_name+"]", "["+prev_activity_name+"]", sep="~")
-"""
+        st = time.process_time()
+        try:
+            self.transition_matrix.to_excel("test.xlsx")
+        except Exception as e:
+            print(f"nepavyko išsaugit excelio. {e}")
+        ft = time.process_time()
+        print(f"Perėjimų matrica išsaugota. Laikas {ft-st}")
+
+    def transition_matrix_to_pickle(self):
+        process_name = self.rpa_log.loc[0, "processName"]
+        self.transition_matrix.to_pickle(os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle"))
