@@ -83,15 +83,20 @@ class Markov():
             else:
                 raise err
 
-    def load_transition_matrix(self, process_name = None):
-        """Užkraunama istorinė perėjimų matrica, jeigu ji randama sukurta, kitu atveju sukuriama nauja"""
+    def load_transition_matrix(self, process_name = None, transition_matrices_path = TRANSITION_MATRICES_PATH):
+        """Užkraunama istorinė perėjimų matrica, jeigu ji randama sukurta, kitu atveju sukuriama nauja
+
+        Params:
+        process_name -> proceso pavadinimas, jeigu nėra rpa_log DataFrame iš kurio galima gauti process_name
+        transition_matrices_path -> kelias iki saugomų perėjimo matricų (modelių)
+        """
         st = time.process_time()
         if not process_name and isinstance(self.rpa_log, pd.DataFrame):
             process_name = self.rpa_log.loc[0, "processName"]
         elif not isinstance(self.rpa_log, pd.DataFrame) and not process_name:
             raise ValueError("Nėra galimybės užkrauti proceso perėjimų matricos. Neinicializuotas DataFrame arba nepateiktas proceso pavadinimas")
 
-        transition_matrix_path = os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle")
+        transition_matrix_path = os.path.join(transition_matrices_path, process_name + ".pickle")
         if os.path.isfile(transition_matrix_path):
             self.transition_matrix =  pd.read_pickle(transition_matrix_path)
             ft = time.process_time()
