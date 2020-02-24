@@ -7,13 +7,13 @@ TEST_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\test_data
 work_log_df = read_log_file_as_df(WORK_lOG_PATH)
 
 work_markov = Markov(work_log_df)
-try:
-    work_markov.load_transition_matrix()
-except ValueError:
-    work_markov.create_transition_matrix()
-    work_markov.transition_matrix_to_pickle()
+work_markov.create_transition_matrix_v2()
 
-work_markov.transition_matrix_to_xlsx()
+test_log_df = read_log_file_as_df(TEST_LOG_PATH)
+for i, row in test_log_df.iterrows():
+    cur_activity_name = row["ActivityName"]
+    df = work_markov.get_activity_probability_v2(cur_activity_name=cur_activity_name)
+    #print(df["Probability"].max())
 
 
 def test_with_manual_input():
