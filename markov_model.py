@@ -21,7 +21,7 @@ class Markov():
     def __init__(self, rpa_log_df):
         # init markov class
         self.transition_matrix = None
-        self.markov_df = None
+        self.transition_matrix = None
         if isinstance(rpa_log_df, pd.DataFrame):
             self.rpa_log = rpa_log_df
         elif rpa_log_df:
@@ -78,7 +78,7 @@ class Markov():
             })
         transition_count_df.columns = transition_count_df.columns.get_level_values(1)
 
-        self.markov_df = temp_df.groupby(["ActivityName", "NextActivity"]) \
+        self.transition_matrix = temp_df.groupby(["ActivityName", "NextActivity"]) \
             .agg({
             "DurationFromStart": [("DurationFromStartMax", "max")
                 , ("DurationFromStartMean", "mean")]
@@ -88,11 +88,11 @@ class Markov():
                 , ("DurationToNextActivityMean", "mean")]
             , "ActivityName": [("TransitionCount", "count")]
         })
-        self.markov_df.columns = self.markov_df.columns.get_level_values(1)
+        self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
 
-        self.markov_df = self.markov_df.join(activity_count_df, on=("ActivityName"))
-        self.markov_df = self.markov_df.join(transition_count_df, on=("ActivityName", "NextActivity"))
-        self.markov_df["Probability"] = self.markov_df["TransitionCount"] / self.markov_df["TotalActivityCount"]
+        self.transition_matrix = self.transition_matrix.join(activity_count_df, on=("ActivityName"))
+        self.transition_matrix = self.transition_matrix.join(transition_count_df, on=("ActivityName", "NextActivity"))
+        self.transition_matrix["Probability"] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
 
     def create_transition_matrix(self):
         # Create datatable with unique activity names as index
@@ -151,19 +151,19 @@ class Markov():
                     , Probability (veiklos tikimybė)
         '''
         if prev_activity_name and not cur_activity_name:
-            if prev_activity_name in self.markov_df.index.get_level_values("NextActivity"):
-                return self.markov_df.loc[(slice(None), prev_activity_name)]
+            if prev_activity_name in self.transition_matrix.index.get_level_values("NextActivity"):
+                return self.transition_matrix.loc[(slice(None), prev_activity_name)]
             else:
                 return pd.DataFrame()
         elif not prev_activity_name and cur_activity_name:
-            if cur_activity_name in self.markov_df.index.get_level_values("ActivityName"):
-                return self.markov_df.loc[cur_activity_name]
+            if cur_activity_name in self.transition_matrix.index.get_level_values("ActivityName"):
+                return self.transition_matrix.loc[cur_activity_name]
             else:
                 return pd.DataFrame()
         elif prev_activity_name and cur_activity_name:
-            if prev_activity_name in self.markov_df.index.get_level_values("NextActivity") \
-                    and cur_activity_name in self.markov_df.index.get_level_values("ActivityName"):
-                return self.markov_df.loc[cur_activity_name, prev_activity_name]
+            if prev_activity_name in self.transition_matrix.index.get_level_values("NextActivity") \
+                    and cur_activity_name in self.transition_matrix.index.get_level_values("ActivityName"):
+                return self.transition_matrix.loc[cur_activity_name, prev_activity_name]
             else:
                 return pd.DataFrame()
 
@@ -201,11 +201,13 @@ class Markov():
         else:
             raise FileNotFoundError("Nerastas pickle failas", transition_matrix_path)
 
-    def transition_matrix_to_xlsx(self):
+    def transition_matrix_to_xlsx(self, file_name = "test", save_folder = TRANSITION_MATRICES_PATH):
         """Save transition matrix to xlsx"""
         st = time.process_time()
+        if isinstance(self.rpa_log, pd.DataFrame):
+            file_name = self.rpa_log.loc[0, "processName"]
         try:
-            self.transition_matrix.to_excel("test.xlsx")
+            self.transition_matrix.to_excel(os.path.join(save_folder), file_name+".xlsx")
         except Exception as e:
             print(f"nepavyko išsaugit excelio. {e}")
         ft = time.process_time()
