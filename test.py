@@ -39,7 +39,7 @@ for case_id in test_log_df["jobId"].unique():
         cur_activity_name = row["ActivityName"]
         if not next_activities_df.empty:
             if cur_activity_name not in next_activities_df.index:
-                fault = [f"Negalimas perėjimas tarp veiklų. Perėjimo tikimybė yra 0"
+                fault = [f"Negalimas perėjimas tarp veiklų."
                         , f"Buvusi veikla {prev_activity} -> esama veikla {cur_activity_name}"]
             else:
                 key = (cur_job_id, prev_activity, cur_activity_name)
@@ -49,10 +49,6 @@ for case_id in test_log_df["jobId"].unique():
                     cur_transitions[key] = 0
 
                 transition: pd.DataFrame = next_activities_df.loc[cur_activity_name]
-                elapsed_time = (row["timeStamp_datetime"] - case_st).seconds
-                duration_from_start_max = transition["DurationFromStartMax"]
-                if elapsed_time > duration_from_start_max:
-                    faults.append([cur_job_id] + ["Veikla įvyko vėliau nei numatyta", f"Elapsed {elapsed_time}. MaxTime {duration_from_start_max}, Diff {elapsed_time - duration_from_start_max}"])
 
                 prob = transition["Probability"]
                 max_transition_cnt = transition["MaxCaseTransitionCount"]
@@ -61,9 +57,23 @@ for case_id in test_log_df["jobId"].unique():
 
                 if prob < 0.0005:
                     faults.append([cur_job_id] + [f"Maža perėjimo tikimybė", f"{prob}"])
+
                 if cur_transitions[key] > max_transition_cnt * 2:
-                    faults.append([cur_job_id] + [f"Pastebėtas 2 kartus per didelis perėjimų skaičius tarp veiklų"
+                    faults.append([cur_job_id] + [f"Pastebėtas per didelis perėjimų skaičius tarp veiklų"
                              ,f"Tarp veiklų {prev_activity} ir {cur_activity_name}. Pastebėtas maksimalus {max_transition_cnt}"])
+                    if cur_transitions[key] > max_transition_cnt * 5:
+
+                        elapsed_time = (row["timeStamp_datetime"] - case_st).seconds
+                        duration_from_start_max = transition["DurationFromStartMax"]
+                        if elapsed_time > duration_from_start_max * 5:
+                            faults.append([cur_job_id] + ["Ciklas",
+                                                          f"Elapsed {elapsed_time}. MaxTime {duration_from_start_max}, Diff {elapsed_time - duration_from_start_max}"])
+                            print("PASTEBĖTAS CIKLAS")
+                            break
+
+                        if elapsed_time > duration_from_start_max:
+                            faults.append([cur_job_id] + ["Veikla įvyko vėliau nei numatyta",
+                                                          f"Elapsed {elapsed_time}. MaxTime {duration_from_start_max}, Diff {elapsed_time - duration_from_start_max}"])
 
         next_activities_df = work_markov.get_activity_probability_v2(cur_activity_name=cur_activity_name)
         if next_activities_df.empty:
@@ -76,7 +86,7 @@ print(f"Finished in {perf_counter() - main_st}")
 
 print(len(faults))
 df = pd.DataFrame(data=faults, columns=["jobId", "Klasifikatorius", "Klaida"])
-df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\result_data.xlsx", index=False)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\result_data2.xlsx", index=False)
 
 def test_with_manual_input():
     print("\n*********************\n")

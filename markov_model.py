@@ -9,7 +9,7 @@ class IllegalMarkovStateException(Exception):
     pass
 
 
-class Markov():
+class Markov:
     """Klasė inicializuojama naudojant dataframe.
     Iškart sukuriama perėjimų matrica
 
