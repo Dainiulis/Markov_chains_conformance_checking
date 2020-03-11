@@ -88,8 +88,8 @@ class Markov:
                 , ("DurationToNextActivityMean", "mean")]
             , "ActivityName": [("TransitionCount", "count")]
         })
-        self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
 
+        self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
         self.transition_matrix = self.transition_matrix.join(activity_count_df, on=("ActivityName"))
         self.transition_matrix = self.transition_matrix.join(transition_count_df, on=("ActivityName", "NextActivity"))
         self.transition_matrix["Probability"] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
