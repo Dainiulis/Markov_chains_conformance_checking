@@ -2,7 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 import time
-
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from logs_parsing.logs import Columns
 
 class IllegalMarkovStateException(Exception):
     """Išimtis, kuomet esama būsena nerasta perėjimų matricoje"""
@@ -16,7 +18,11 @@ class Markov:
     rpa_log_df - jau turimas log DataFrame jeigu ne DataFrame, tuomet ValueError išimtis
     """
 
+    '''Constants'''
     TRANSITION_MATRICES_PATH = r"Data"
+    POLYNOMIAL_DEGREE = 3
+    INTERACTION_ONLY = False
+    INCLUDE_BIAS = False
 
     def __init__(self, rpa_log_df):
         # init markov class
@@ -35,50 +41,87 @@ class Markov:
 
     def create_transition_matrix_v2(self):
         main_st = time.process_time()
-        temp_df: pd.DataFrame = self.rpa_log[
-            ["processName", "jobId", "timeStamp_datetime", "timeStamp", "ActivityName"]].copy()
+        temp_df: pd.DataFrame = self.rpa_log.copy()
         temp_df["DurationFromStart"] = pd.np.nan
         temp_df["DurationBetweenActivities"] = pd.np.nan
-        temp_df["NextActivity"] = pd.np.nan
+        temp_df[Columns.NEXT_ACTIVITY.value] = pd.np.nan
         temp_df["NextActivityDurationFromStart"] = pd.np.nan
         temp_df["DurationToNextActivity"] = pd.np.nan
         # temp_df["DurationFromStart_ms"] = pd.np.nan
 
         '''Surenkami perėjimai tarp veiklų, suskaičiuojamas laikas tarp perėjimų
         ir laikas nuo proceso pradžios iki veiklos, pabaigos veikla pažymima FINISH'''
-        for jobId in temp_df["jobId"].unique():
-            mask = temp_df["jobId"] == jobId
+        for jobId in temp_df[Columns.CASE_ID.value].unique():
+            mask = temp_df[Columns.CASE_ID.value] == jobId
             index = temp_df.loc[mask].index.min()
-            start_time = temp_df.loc[index, "timeStamp_datetime"]
-            temp_df.loc[mask, "DurationFromStart"] = (temp_df.loc[mask, "timeStamp_datetime"] - start_time).dt.seconds
+            start_time = temp_df.loc[index, Columns.TIMESTAMP_DATETIME.value]
+            temp_df.loc[mask, "DurationFromStart"] = (temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - start_time).dt.seconds
             temp_df.loc[mask, "DurationBetweenActivities"] = (
-                    temp_df.loc[mask, "timeStamp_datetime"] - temp_df.loc[mask, "timeStamp_datetime"].shift(
+                    temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value].shift(
                 1)).dt.microseconds.fillna(0)
-            temp_df.loc[mask, "NextActivity"] = temp_df.loc[mask, "ActivityName"].shift(-1)
+            temp_df.loc[mask, Columns.NEXT_ACTIVITY.value] = temp_df.loc[mask, Columns.ACTIVITY_NAME.value].shift(-1)
             temp_df.loc[mask, "NextActivityDurationFromStart"] = temp_df.loc[mask, "DurationFromStart"].shift(-1)
             temp_df.loc[mask, "DurationToNextActivity"] = temp_df.loc[mask, "DurationBetweenActivities"].shift(-1)
-        temp_df["NextActivity"] = temp_df["NextActivity"].fillna("FINISH")
+        temp_df[Columns.NEXT_ACTIVITY.value] = temp_df[Columns.NEXT_ACTIVITY.value].fillna("FINISH")
         ft = time.process_time()
         print(f"Pridėti perėjimo laikų ir sekančių įvykių stulpeliai. {ft - main_st} s.")
 
         '''DataFrame visoms veikloms suskaičiuoti. Papildomai gaunamas maksimalus veiklų pasikartojimas vienam atvejui'''
-        activity_count_df = temp_df.groupby(["jobId", "ActivityName"]).agg({"ActivityName": "count"})
-        activity_count_df = activity_count_df.groupby(level=["ActivityName"]).agg(
+        activity_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value]).agg({Columns.ACTIVITY_NAME.value: "count"})
+        activity_count_df = activity_count_df.groupby(level=[Columns.ACTIVITY_NAME.value]).agg(
             {
-                "ActivityName": [("TotalActivityCount", "sum")
+                Columns.ACTIVITY_NAME.value: [("TotalActivityCount", "sum")
                     , ("MaxCaseActivityCount", "max")]
             })
         activity_count_df.columns = activity_count_df.columns.get_level_values(1)
 
         '''DataFrame max perejimams tarp veiklu suskaiciuoti'''
-        transition_count_df = temp_df.groupby(["jobId", "ActivityName", "NextActivity"]).agg({"ActivityName": "count"})
-        transition_count_df = transition_count_df.groupby(level=["ActivityName", "NextActivity"]).agg(
+        transition_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
+            {Columns.ACTIVITY_NAME.value: [("ActivityCount", "count")]})
+        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
+
+        '''Building probability regression model'''
+        transition_count_df["Probabilities"] = transition_count_df["ActivityCount"].apply(lambda x: np.ones(x, np.int8))
+        transtition_count_with_probabilities = transition_count_df.copy()
+        transition_count_df = transition_count_df.groupby(level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
             {
-                "ActivityName": [("MaxCaseTransitionCount", "max")]
+                "ActivityCount": [("MaxCaseTransitionCount", "max"), ("UniqueActivitiesCount", "count")]
             })
         transition_count_df.columns = transition_count_df.columns.get_level_values(1)
 
-        self.transition_matrix = temp_df.groupby(["ActivityName", "NextActivity"]) \
+        transtition_count_with_probabilities = transtition_count_with_probabilities.join(transition_count_df
+                                                                                         , on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
+        transtition_count_with_probabilities["ffill_zeros"] = transtition_count_with_probabilities["MaxCaseTransitionCount"] - transtition_count_with_probabilities["ActivityCount"]
+        transtition_count_with_probabilities["Probabilities"] = transtition_count_with_probabilities.apply(
+            lambda x: np.pad(x["Probabilities"], (0, x["ffill_zeros"]), 'constant')
+            , axis=1)
+
+        transtition_count_with_probabilities = transtition_count_with_probabilities.groupby(level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value])["Probabilities"] \
+            .apply(np.vstack) \
+            .apply(lambda x: np.sum(x, axis=0))
+
+        transition_count_df = transition_count_df.join(transtition_count_with_probabilities, on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
+        transition_count_df["Probabilities"] = transition_count_df["Probabilities"] / transition_count_df["UniqueActivitiesCount"]
+        transition_count_df["ProbabilitiesMean"] = transition_count_df["Probabilities"].apply(lambda x: x.mean())
+        mask_mean_is_one = transition_count_df["ProbabilitiesMean"] == 1.0
+        transition_count_df.loc[mask_mean_is_one, "Probabilities"] = transition_count_df.loc[mask_mean_is_one, "Probabilities"] \
+            .apply(lambda x: np.append(x, 0))
+
+        transition_count_df["x"] = transition_count_df["Probabilities"] \
+            .apply(lambda x: np.arange(1, x.shape[0] + 1) \
+                   .reshape(-1, 1))
+
+        transition_count_df["x_"] = transition_count_df["x"] \
+            .apply(lambda x: PolynomialFeatures(degree=self.POLYNOMIAL_DEGREE
+                                                , interaction_only=self.INTERACTION_ONLY
+                                                , include_bias=self.INCLUDE_BIAS) \
+                   .fit_transform(x))
+
+        transition_count_df["model"] = transition_count_df[["x_", "Probabilities"]] \
+            .apply(lambda x: LinearRegression().fit(x["x_"], x["Probabilities"]), axis=1)
+
+
+        self.transition_matrix = temp_df.groupby([Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]) \
             .agg({
             "DurationFromStart": [("DurationFromStartMax", "max")
                 , ("DurationFromStartMean", "mean")]
@@ -86,17 +129,17 @@ class Markov:
                 , ("NextActivityDurationFromStartMean", "mean")]
             , "DurationToNextActivity": [("DurationToNextActivityMax", "max")
                 , ("DurationToNextActivityMean", "mean")]
-            , "ActivityName": [("TransitionCount", "count")]
+            , Columns.ACTIVITY_NAME.value: [("TransitionCount", "count")]
         })
 
         self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
-        self.transition_matrix = self.transition_matrix.join(activity_count_df, on=("ActivityName"))
-        self.transition_matrix = self.transition_matrix.join(transition_count_df, on=("ActivityName", "NextActivity"))
+        self.transition_matrix = self.transition_matrix.join(activity_count_df, on=(Columns.ACTIVITY_NAME.value))
+        self.transition_matrix = self.transition_matrix.join(transition_count_df, on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
         self.transition_matrix["Probability"] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
 
     def create_transition_matrix(self):
         # Create datatable with unique activity names as index
-        markov_df = self.rpa_log["ActivityName"].unique()
+        markov_df = self.rpa_log[Columns.ACTIVITY_NAME.value].unique()
         markov_df = pd.DataFrame(index=markov_df, columns=["NextStates"])
 
         # sukuriama perėjimų matrica iš visų galimų įvykių (tiek eilutės, tiek stulpeliai)
@@ -105,11 +148,11 @@ class Markov:
         st = time.process_time()
         # Surandamos būsenų poros iš originalaus DataFrame
         for state, _ in markov_df.iterrows():
-            all_states_mask = self.rpa_log["ActivityName"] == state
+            all_states_mask = self.rpa_log[Columns.ACTIVITY_NAME.value] == state
             # Surandami sekančių įvykių indeksai
             next_states_indexes = self.rpa_log[all_states_mask].index + 1
             # Surandami visi sekantys indeksai iš dataframe ir konvertuojami į sąrašą
-            next_states_list = self.rpa_log.loc[next_states_indexes, "ActivityName"]
+            next_states_list = self.rpa_log.loc[next_states_indexes, Columns.ACTIVITY_NAME.value]
             # pašalinamas paskutinis neegzistuojantis įvykis, kuris nurodo proceso sekos pabaigos
             next_states_list.dropna(inplace=True)
             # visos rastos būsenos išsaugomos eilutėje
@@ -149,22 +192,26 @@ class Markov:
                     , MaxCaseTransitionCount (maksimalus perėjimų skačius vienam atvejui)
                     , MaxCaseActivityCount (maksimalus veiklų skaičius vienam atvejui)
                     , Probability (veiklos tikimybė)
+            jeigu įvykis nerandamas, tuomet grąžinamas tuščias dataframe
         '''
         if prev_activity_name and not cur_activity_name:
-            if prev_activity_name in self.transition_matrix.index.get_level_values("NextActivity"):
+            if prev_activity_name in self.transition_matrix.index.get_level_values(Columns.NEXT_ACTIVITY.value):
                 return self.transition_matrix.loc[(slice(None), prev_activity_name)]
             else:
+                '''return empty data frame'''
                 return pd.DataFrame()
         elif not prev_activity_name and cur_activity_name:
-            if cur_activity_name in self.transition_matrix.index.get_level_values("ActivityName"):
+            if cur_activity_name in self.transition_matrix.index.get_level_values(Columns.ACTIVITY_NAME.value):
                 return self.transition_matrix.loc[cur_activity_name]
             else:
+                '''return empty data frame'''
                 return pd.DataFrame()
         elif prev_activity_name and cur_activity_name:
-            if prev_activity_name in self.transition_matrix.index.get_level_values("NextActivity") \
-                    and cur_activity_name in self.transition_matrix.index.get_level_values("ActivityName"):
+            if prev_activity_name in self.transition_matrix.index.get_level_values(Columns.NEXT_ACTIVITY.value) \
+                    and cur_activity_name in self.transition_matrix.index.get_level_values(Columns.ACTIVITY_NAME.value):
                 return self.transition_matrix.loc[cur_activity_name, prev_activity_name]
             else:
+                '''return empty data frame'''
                 return pd.DataFrame()
 
     def get_activity_probability(self, prev_activity_name, cur_activity_name):
@@ -188,7 +235,7 @@ class Markov:
         """
         st = time.process_time()
         if not process_name and isinstance(self.rpa_log, pd.DataFrame):
-            process_name = self.rpa_log.loc[0, "processName"]
+            process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         elif not isinstance(self.rpa_log, pd.DataFrame) and not process_name:
             raise ValueError(
                 "Nėra galimybės užkrauti proceso perėjimų matricos. Neinicializuotas DataFrame arba nepateiktas proceso pavadinimas")
@@ -205,9 +252,9 @@ class Markov:
         """Save transition matrix to xlsx"""
         st = time.process_time()
         if isinstance(self.rpa_log, pd.DataFrame):
-            file_name = self.rpa_log.loc[0, "processName"]
+            file_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         try:
-            self.transition_matrix.to_excel(os.path.join(save_folder), file_name+".xlsx")
+            self.transition_matrix.to_excel(os.path.join(save_folder, file_name+".xlsx"))
         except Exception as e:
             print(f"nepavyko išsaugit excelio. {e}")
         ft = time.process_time()
@@ -215,5 +262,5 @@ class Markov:
 
     def transition_matrix_to_pickle(self):
         """Issaugoma perejimu matrica pickle failo fromatu (python failas), greitam jo uzkrovimui"""
-        process_name = self.rpa_log.loc[0, "processName"]
+        process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         self.transition_matrix.to_pickle(os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle"))
