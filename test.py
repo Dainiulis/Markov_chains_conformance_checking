@@ -1,92 +1,69 @@
 from win32comext.bits.test.test_bits import job
 
 from markov_model import Markov, IllegalMarkovStateException
-from logs_parsing.log_loader import read_log_file_as_df
+from logs_parsing.log_loader import read_uipath_log_file_as_df
 from time import perf_counter
 import pandas as pd
 import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from logs_parsing.logs import Columns
+from fault_checker import FaultChecker
 
 WORK_lOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\work_data.pickle"
 TEST_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\test_data.pickle"
 LOOP_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\loop_case.pickle"
 
-work_log_df = read_log_file_as_df(WORK_lOG_PATH)
+work_log_df = read_uipath_log_file_as_df(WORK_lOG_PATH)
 
 work_markov = Markov(work_log_df)
+
 try:
     work_markov.load_transition_matrix()
 except FileNotFoundError:
     work_markov.create_transition_matrix_v2()
     work_markov.transition_matrix_to_pickle()
-work_markov.transition_matrix_to_xlsx(file_name="test")
+work_markov.transition_matrix_to_xlsx()
 
-test_log_df = read_log_file_as_df(TEST_LOG_PATH)
+test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH, with_faulted_cases=True)
 
 main_st = perf_counter() #timestamp
-print("Unikalių atvejų: ", test_log_df["jobId"].unique().shape[0])
+print("Unikalių atvejų: ", test_log_df[Columns.CASE_ID.value].unique().shape[0])
+time_analysis = []
 faults = []
+faults2 = []
 cur_transitions = {}
-for case_id in test_log_df["jobId"].unique():
-    case_mask = test_log_df["jobId"] == case_id
+for case_id in test_log_df[Columns.CASE_ID.value].unique():
+    case_performance_time = perf_counter()
+    case_mask = test_log_df[Columns.CASE_ID.value] == case_id
     next_activities_df = pd.DataFrame()
     prev_activity = ""
     df = test_log_df[case_mask].copy().reset_index(drop=True)
-    case_st = df.loc[0, "timeStamp_datetime"]
+    case_st = df.loc[0, Columns.TIMESTAMP_DATETIME.value]
+    checked_lines = 0
+    fault_checker = FaultChecker(work_markov)
     for i, row in df.iterrows():
-        fault = None
-        st = perf_counter()
-        cur_job_id = row["jobId"]
-        cur_activity_name = row["ActivityName"]
-        if not next_activities_df.empty:
-            if cur_activity_name not in next_activities_df.index:
-                fault = [f"Negalimas perėjimas tarp veiklų."
-                        , f"Buvusi veikla {prev_activity} -> esama veikla {cur_activity_name}"]
-            else:
-                key = (cur_job_id, prev_activity, cur_activity_name)
-                if key in cur_transitions.keys():
-                    cur_transitions[key] += 1
-                else:
-                    cur_transitions[key] = 0
-
-                transition: pd.DataFrame = next_activities_df.loc[cur_activity_name]
-
-                prob = transition["Probability"]
-                max_transition_cnt = transition["MaxCaseTransitionCount"]
-                max_case_activity_cnt = transition["MaxCaseActivityCount"]
-
-
-                if prob < 0.0005:
-                    faults.append([cur_job_id] + [f"Maža perėjimo tikimybė", f"{prob}"])
-
-                if cur_transitions[key] > max_transition_cnt * 2:
-                    faults.append([cur_job_id] + [f"Pastebėtas per didelis perėjimų skaičius tarp veiklų"
-                             ,f"Tarp veiklų {prev_activity} ir {cur_activity_name}. Pastebėtas maksimalus {max_transition_cnt}"])
-                    if cur_transitions[key] > max_transition_cnt * 5:
-
-                        elapsed_time = (row["timeStamp_datetime"] - case_st).seconds
-                        duration_from_start_max = transition["DurationFromStartMax"]
-                        if elapsed_time > duration_from_start_max * 5:
-                            faults.append([cur_job_id] + ["Ciklas",
-                                                          f"Elapsed {elapsed_time}. MaxTime {duration_from_start_max}, Diff {elapsed_time - duration_from_start_max}"])
-                            print("PASTEBĖTAS CIKLAS")
-                            break
-
-                        if elapsed_time > duration_from_start_max:
-                            faults.append([cur_job_id] + ["Veikla įvyko vėliau nei numatyta",
-                                                          f"Elapsed {elapsed_time}. MaxTime {duration_from_start_max}, Diff {elapsed_time - duration_from_start_max}"])
-
-        next_activities_df = work_markov.get_activity_probability_v2(cur_activity_name=cur_activity_name)
-        if next_activities_df.empty:
-            fault = [f"Negalima esama veikla", cur_activity_name]
-        if fault:
-            faults.append([cur_job_id] + fault)
-        prev_activity = cur_activity_name
-
+        checked_lines = i
+        fault_checker.check_faults(row)
+        if fault_checker.stop_checking:
+            break
+    faults.extend(fault_checker.faults)
+    faults2.extend(fault_checker.faults_dict.values())
+    case_performance_time = perf_counter() - case_performance_time
+    time_analysis.append({"case_id": case_id,
+                          "case_performance_time": case_performance_time,
+                          "fault_count": len(fault_checker.faults),
+                          "traces_count": df.shape[0] })
+    # fault_checker.save_log()
 print(f"Finished in {perf_counter() - main_st}")
 
-print(len(faults))
-df = pd.DataFrame(data=faults, columns=["jobId", "Klasifikatorius", "Klaida"])
-df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\result_data2.xlsx", index=False)
+print(len(faults), checked_lines)
+df = pd.DataFrame(data=faults)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All1.xlsx", index=False)
+df = pd.DataFrame(data=faults2)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All2.xlsx", index=False)
+df = pd.DataFrame(data=time_analysis)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\analysis.xlsx", index=False)
 
 def test_with_manual_input():
     print("\n*********************\n")
@@ -100,7 +77,7 @@ def test_with_manual_input():
         else:
             cur_activity_name = input(f"Buvusi veikla '{prev_activity_name}', tikimybė su esama {prob}. Įveskite naują: ")
             try:
-                prob = work_markov.get_activity_probability(prev_activity_name, cur_activity_name)
+                prob = work_markov.get_markov_activity_probability(prev_activity_name, cur_activity_name)
                 # if prob < 0.1:
                 #     print("Retai pasitaikanti veikla", cur_activity_name, prob)
             except IllegalMarkovStateException as e:
@@ -116,14 +93,14 @@ def test_with_manual_input():
 
 
 def test_with_auto_input():
-    test_log_df = read_log_file_as_df(TEST_LOG_PATH)
+    test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH)
     for i, row in test_log_df.iterrows():
         if i == 0:
             continue
-        cur_activity_name = row["ActivityName"]
-        prev_activity_name = test_log_df.loc[i-1, "ActivityName"]
+        cur_activity_name = row[Columns.ACTIVITY_NAME.value]
+        prev_activity_name = test_log_df.loc[i-1, Columns.ACTIVITY_NAME.value]
         try:
-            prob = work_markov.get_activity_probability(prev_activity_name, cur_activity_name)
+            prob = work_markov.get_markov_activity_probability(prev_activity_name, cur_activity_name)
             # if prob < 0.1:
             #     print("Retai pasitaikanti veikla", cur_activity_name, prob)
         except IllegalMarkovStateException as e:

@@ -13,17 +13,17 @@ class UiPathLogsParser():
     def __init__(self):
         self.logs_df = None
 
-    def append_log_df(self, df):
-        if logs_df is None:
+    def _append_log_df(self, df):
+        if self.logs_df is None:
             self.logs_df = df
         else:
             self.logs_df.append(df)
 
-    def fill_transaction_ids(self):
+    def _fill_transaction_ids(self):
         self.logs_df
 
     # for cikle yra sužymimi visi transactionID kiekvienai transakcijai nuo pradžos iki pabaigos
-    def save_logs_by_processes(process_name):
+    def _save_logs_by_processes(self, process_name):
         start_time = time.process_time()
         process_mask = (df["processName"] == process_name)
         df_cpy = df[process_mask].copy()
@@ -100,7 +100,7 @@ class UiPathLogsParser():
             , "processVersion" : jdata["processVersion"]
         }
 
-    def read_log_as_df(log_path, processName = None):
+    def read_log_as_df(self, log_path, processName = None):
         """
         log_path gali būti logų sąrašas (list) arba vienas failas
 
@@ -117,7 +117,7 @@ class UiPathLogsParser():
         for log in log_path:
             start_time = time.process_time()
             print(log)
-            with open(log, "r", encoding="utf-8") as file:
+            with open(log, mode="r", encoding="utf-8") as file:
                 for line in file:
                     if not line.strip():
                         continue
@@ -128,7 +128,7 @@ class UiPathLogsParser():
                         if jdata["processName"] != processName:
                             continue
                     try:
-                        data = get_valid_values(jdata)
+                        data = self.get_valid_values(jdata)
                     except Exception as e:
                         print("Unable to parse data.", e)
                         continue
@@ -141,7 +141,7 @@ class UiPathLogsParser():
         df = pd.DataFrame(data_list)
         df["timeStamp"] = df["timeStamp"].str.replace("\+02:00", "")
         df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"])
-        append_log_df(df)
+        self._append_log_df(df)
 
 if __name__ == "__main__":
     os.chdir(ROOT_DIR)
