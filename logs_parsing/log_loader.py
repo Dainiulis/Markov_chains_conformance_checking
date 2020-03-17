@@ -4,13 +4,29 @@ import os
 from logs_parsing.logs import Columns
 
 
-def read_uipath_log_file_as_df(log_file_path):
-    """Užkraunamas pickle failas"""
+def read_uipath_log_file_as_df(data, with_faulted_cases = False):
+    """Užkraunamas pickle failas
+    params:
+    data - .pickle file path arba dataframe
+    """
     st = time.process_time()
-    if log_file_path.endswith(".pickle"):
-        df = pd.read_pickle(log_file_path)
+    if isinstance(data, str):
+        if data.endswith(".pickle"):
+            df = pd.read_pickle(data)
+    elif isinstance(data, pd.DataFrame):
+        df = data
+    else:
+        if data is None:
+            raise Exception(f"data not passed")
+        else:
+            raise Exception(f"Data type {type(data)} not supported")
     # Filtering
-    mask = df["State"] == "Executing"
+    if with_faulted_cases:
+        mask = df["State"] == "Executing"
+    else:
+        faulted_jobIds = df.loc[df["level"] == "Fatal", "jobId"].unique()
+        faulted_cases_rows = df["jobId"].isin(faulted_jobIds)
+        mask = (df["State"] == "Executing") & ~faulted_cases_rows
     df = df[mask]
     df["ActivityName"] = df["DisplayName"] + "|" + df["State"] + "|" + df["fileName"]
 
@@ -23,7 +39,7 @@ def read_uipath_log_file_as_df(log_file_path):
         "timeStamp": Columns.TIMESTAMP.value,
         "ActivityName": Columns.ACTIVITY_NAME.value
     }, inplace=True)
-    print(f"Užkrautas {os.path.basename(log_file_path)} failas. Laikas: {ft - st}")
+    print(f"Užkrautas {os.path.basename(data)} failas. Laikas: {ft - st}")
     return df[[Columns.PROCESS_NAME.value,
                Columns.CASE_ID.value,
                Columns.TIMESTAMP_DATETIME.value,

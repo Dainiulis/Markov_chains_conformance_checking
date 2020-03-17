@@ -19,12 +19,12 @@ class Markov:
     """
 
     '''Constants'''
-    TRANSITION_MATRICES_PATH = r"Data"
+    TRANSITION_MATRICES_PATH = r"D:\Dainius\Documents\_Magistro darbas data\Python code\Markov_chains_conformance_checking\Data"
     POLYNOMIAL_DEGREE = 3
     INTERACTION_ONLY = False
     INCLUDE_BIAS = False
 
-    def __init__(self, rpa_log_df):
+    def __init__(self, rpa_log_df=None):
         # init markov class
         self.transition_matrix = None
         self.transition_matrix = None
@@ -37,7 +37,7 @@ class Markov:
             Įvykių žurnalas nepaduotas. Matrica turi būti užkraunama su tiksliu proceso pavadinimu iš pickle failo
             Užkrovimas vyksta load_transition_matrix(process_name) metodu
             """
-            pass
+            print("Procesas turi būti užkrautas ir nurodytas tiksliai metodui load_transition_matrix")
 
     def create_transition_matrix_v2(self):
         main_st = time.process_time()
@@ -65,13 +65,15 @@ class Markov:
         temp_df[Columns.NEXT_ACTIVITY.value] = temp_df[Columns.NEXT_ACTIVITY.value].fillna("FINISH")
         ft = time.process_time()
         print(f"Pridėti perėjimo laikų ir sekančių įvykių stulpeliai. {ft - main_st} s.")
+        temp_df.to_pickle(os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.pickle"))
 
         '''DataFrame visoms veikloms suskaičiuoti. Papildomai gaunamas maksimalus veiklų pasikartojimas vienam atvejui'''
         activity_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value]).agg({Columns.ACTIVITY_NAME.value: "count"})
         activity_count_df = activity_count_df.groupby(level=[Columns.ACTIVITY_NAME.value]).agg(
             {
-                Columns.ACTIVITY_NAME.value: [("TotalActivityCount", "sum")
-                    , ("MaxCaseActivityCount", "max")]
+                Columns.ACTIVITY_NAME.value: [("TotalActivityCount", "sum"),
+                                              ("MaxCaseActivityCount", "max"),
+                                              ("MinCaseActivityCount", "min")]
             })
         activity_count_df.columns = activity_count_df.columns.get_level_values(1)
 
@@ -85,7 +87,10 @@ class Markov:
         transtition_count_with_probabilities = transition_count_df.copy()
         transition_count_df = transition_count_df.groupby(level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
             {
-                "ActivityCount": [("MaxCaseTransitionCount", "max"), ("UniqueActivitiesCount", "count")]
+                "ActivityCount": [("MaxCaseTransitionCount", "max"),
+                                  ("MinCaseTransitionCount", "min"),
+                                  ("UniqueActivitiesCount", "count"),
+                                  ("MeanCaseTransitionCount", "mean")]
             })
         transition_count_df.columns = transition_count_df.columns.get_level_values(1)
 
@@ -112,32 +117,38 @@ class Markov:
                    .reshape(-1, 1))
 
         transition_count_df["x_"] = transition_count_df["x"] \
-            .apply(lambda x: PolynomialFeatures(degree=self.POLYNOMIAL_DEGREE
-                                                , interaction_only=self.INTERACTION_ONLY
-                                                , include_bias=self.INCLUDE_BIAS) \
+            .apply(lambda x: PolynomialFeatures(degree=self.POLYNOMIAL_DEGREE,
+                                                interaction_only=self.INTERACTION_ONLY,
+                                                include_bias=self.INCLUDE_BIAS) \
                    .fit_transform(x))
 
+        '''Polynomial model'''
         transition_count_df["model"] = transition_count_df[["x_", "Probabilities"]] \
             .apply(lambda x: LinearRegression().fit(x["x_"], x["Probabilities"]), axis=1)
 
+        '''Linear model'''
+        transition_count_df["linear_model"] = transition_count_df[["x", "Probabilities"]] \
+            .apply(lambda x: LinearRegression().fit(x["x"], x["Probabilities"]), axis=1)
 
+        '''Duration and transition count aggregation'''
         self.transition_matrix = temp_df.groupby([Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]) \
             .agg({
-            "DurationFromStart": [("DurationFromStartMax", "max")
-                , ("DurationFromStartMean", "mean")]
-            , "NextActivityDurationFromStart": [("NextActivityDurationFromStartMax", "max")
-                , ("NextActivityDurationFromStartMean", "mean")]
-            , "DurationToNextActivity": [("DurationToNextActivityMax", "max")
-                , ("DurationToNextActivityMean", "mean")]
-            , Columns.ACTIVITY_NAME.value: [("TransitionCount", "count")]
+            "DurationFromStart": [("DurationFromStartMax", "max"),
+                                  ("DurationFromStartMean", "mean")],
+            "NextActivityDurationFromStart": [("NextActivityDurationFromStartMax", "max"),
+                                              ("NextActivityDurationFromStartMean", "mean")],
+            "DurationToNextActivity": [("DurationToNextActivityMax", "max"),
+                                       ("DurationToNextActivityMean", "mean")],
+            Columns.ACTIVITY_NAME.value: [("TransitionCount", "count")]
         })
 
         self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
         self.transition_matrix = self.transition_matrix.join(activity_count_df, on=(Columns.ACTIVITY_NAME.value))
         self.transition_matrix = self.transition_matrix.join(transition_count_df, on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
-        self.transition_matrix["Probability"] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
+        self.transition_matrix[Columns.PROBABILITY.value] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
+        self.transition_matrix[Columns.MEAN_TRANSITION_PROBABILITY_COEFFICIENT.value] = self.transition_matrix[Columns.PROBABILITY.value] * self.transition_matrix["MeanCaseTransitionCount"]
 
-    def create_transition_matrix(self):
+    def create_markov_transition_matrix(self):
         # Create datatable with unique activity names as index
         markov_df = self.rpa_log[Columns.ACTIVITY_NAME.value].unique()
         markov_df = pd.DataFrame(index=markov_df, columns=["NextStates"])
@@ -214,7 +225,7 @@ class Markov:
                 '''return empty data frame'''
                 return pd.DataFrame()
 
-    def get_activity_probability(self, prev_activity_name, cur_activity_name):
+    def get_markov_activity_probability(self, prev_activity_name, cur_activity_name):
         try:
             return self.transition_matrix.loc[prev_activity_name, cur_activity_name]
         except KeyError as err:
@@ -234,11 +245,12 @@ class Markov:
         transition_matrices_path -> kelias iki saugomų perėjimo matricų (modelių)
         """
         st = time.process_time()
-        if not process_name and isinstance(self.rpa_log, pd.DataFrame):
-            process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
-        elif not isinstance(self.rpa_log, pd.DataFrame) and not process_name:
-            raise ValueError(
-                "Nėra galimybės užkrauti proceso perėjimų matricos. Neinicializuotas DataFrame arba nepateiktas proceso pavadinimas")
+        if hasattr(self, "rpa_log"):
+            if not process_name and isinstance(self.rpa_log, pd.DataFrame):
+                process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
+            elif not isinstance(self.rpa_log, pd.DataFrame) and not process_name:
+                raise ValueError(
+                    "Nėra galimybės užkrauti proceso perėjimų matricos. Neinicializuotas DataFrame arba nepateiktas proceso pavadinimas")
 
         transition_matrix_path = os.path.join(transition_matrices_path, process_name + ".pickle")
         if os.path.isfile(transition_matrix_path):

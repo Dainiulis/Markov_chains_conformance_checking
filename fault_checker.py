@@ -4,6 +4,7 @@ from markov_model import Markov, IllegalMarkovStateException
 from logs_parsing.logs import Columns
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
+import copy
 
 
 class FaultChecker:
@@ -13,6 +14,8 @@ class FaultChecker:
         self.markov_model = markov_model
         self.transitions_counts = {}
         self.faults = []
+        self.faults_dict = {}
+        self.stop_checking = False
 
     def log_fault(self, fault_type, custom_fault_values=None, **extra_fault_values):
         if custom_fault_values is None:
@@ -23,7 +26,9 @@ class FaultChecker:
         custom_fault_values["Esama veikla"] = self.current_activity_name
         custom_fault_values["Buvusi veikla"] = self.previous_activity_name
         custom_fault_values[Columns.CASE_ID.value] = self.case_id
-        self.faults.append(custom_fault_values)
+        self.faults.append(custom_fault_values.copy())
+        if fault_type not in self.faults_dict.keys():
+            self.faults_dict[fault_type] = custom_fault_values.copy()
 
     def save_log(self):
         if self.faults:
@@ -76,21 +81,40 @@ class FaultChecker:
 
     def _check_transition_faults(self):
 
-        def __check_regression_prob():
-            '''Linijinės regresijos aptikimo būdas'''
+        def __check_polynomial_regression_prob():
+            '''Linijinės polinominės regresijos aptikimo būdas'''
             number_to_predict = np.array([self.transition_count]).reshape(-1, 1)
             y_prediction = model.predict(PolynomialFeatures(degree=self.markov_model.POLYNOMIAL_DEGREE
                                                             , include_bias=self.markov_model.INCLUDE_BIAS
                                                             , interaction_only=self.markov_model.INTERACTION_ONLY) \
                                          .fit_transform(number_to_predict))
-            y_prob = y_prediction[0] * prob
-            if y_prob < -prob:
+            y_prob = y_prediction[0] * probability
+            if y_prob < -mean_probability:
                 custom_fault_values["Apskaičiuota n-toji perėjimo tikimybė"] = y_prob
-                self.log_fault("Galimas ciklas", custom_fault_values)
+                custom_fault_values["Vidutinio perėjimo ir tikimybės koeficientas"] = mean_probability
+                self.log_fault("Galimas ciklas (polinominė regresija)", custom_fault_values)
+                if hasattr(self, "polynomial_fault_counter"):
+                    self.polynomial_fault_counter += 1
+                else:
+                    self.polynomial_fault_counter = 0
+
+        def __check_linear_prob():
+            '''Linijinės regresijos aptikimo būdas'''
+            number_to_predict = np.array([self.transition_count]).reshape(-1, 1)
+            y_prediction = linear_model.predict(number_to_predict)
+            y_prob = y_prediction[0] * probability
+            if y_prob < -probability:
+                custom_fault_values["Apskaičiuota n-toji perėjimo tikimybė"] = y_prob
+                custom_fault_values["Vidutinio perėjimo ir tikimybės koeficientas"] = mean_probability
+                self.log_fault("Galimas ciklas (linijinė regresija)", custom_fault_values)
+                if hasattr(self, "linear_fault_counter"):
+                    self.linear_fault_counter += 1
+                else:
+                    self.linear_fault_counter = 0
 
         def __check_prob():
             '''Paprasta tikimybinė klaida'''
-            if prob < 0.0005:
+            if probability < 0.0005:
                 self.log_fault("Maža perėjimo tikimybė", custom_fault_values)
 
         def __check_with_heuristic_rules():
@@ -114,17 +138,22 @@ class FaultChecker:
 
         transition: pd.DataFrame = self.next_activities_df.loc[self.current_activity_name]
         '''Transition row'''
-        prob = transition["Probability"]
+        probability = transition[Columns.PROBABILITY.value]
+        mean_probability = transition[Columns.MEAN_TRANSITION_PROBABILITY_COEFFICIENT.value]
         max_transition_cnt = transition["MaxCaseTransitionCount"]
         model = transition["model"]
+        linear_model = transition["linear_model"]
         # max_case_activity_cnt = transition["MaxCaseActivityCount"]
         custom_fault_values = {"Perėjimo skaičius": self.transition_count,
                                "Maksimalus perėjimų skaičius": max_transition_cnt,
-                               "Perėjimo tikimybė": prob
+                               "Perėjimo tikimybė": probability
                                }
-        __check_regression_prob()
-        # __check_prob()
-        # __check_with_heuristic_rules()
+        __check_polynomial_regression_prob()
+        __check_linear_prob()
+        __check_prob()
+        __check_with_heuristic_rules()
+        if hasattr(self, "polynomial_fault_counter") and hasattr(self, "linear_fault_counter"):
+            self.stop_checking = self.polynomial_fault_counter > 10 and self.linear_fault_counter > 10
 
     def _check_current_row_faults(self):
         """

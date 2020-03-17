@@ -4,7 +4,7 @@ import json
 import re
 from pandas.io.json import json_normalize
 
-def read_log_as_df(log_path):
+def read_log_as_df(log_path, ):
     """
     log_path gali būti logų sąrašas (list) arba vienas failas
 
@@ -59,6 +59,8 @@ if __name__ == "__main__":
     folder = r"D:\Dainius\Documents\_Magistro darbas data\Logs_esorobot"
     log_path = os.listdir(folder)
     log_path = [os.path.join(folder, file) for file in log_path]
+
+
 
     log_path = r"D:\Dainius\Documents\_Magistro darbas data\Logs_esorobot\2019-12-30_Execution.log"
     csv_path = r"D:\Dainius\Documents\_Magistro darbas data\VEI_Rangovo_aktai_csv2.csv"
