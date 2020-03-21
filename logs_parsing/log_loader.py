@@ -4,7 +4,7 @@ import os
 from logs_parsing.logs import Columns
 
 
-def read_uipath_log_file_as_df(data, with_faulted_cases = False):
+def read_uipath_log_file_as_df(data, with_faulted_cases = False, all_cases = False):
     """Užkraunamas pickle failas
     params:
     data - .pickle file path arba dataframe
@@ -21,17 +21,19 @@ def read_uipath_log_file_as_df(data, with_faulted_cases = False):
         else:
             raise Exception(f"Data type {type(data)} not supported")
     # Filtering
+    mask = df["level"] == "Trace"
     if with_faulted_cases:
-        mask = df["State"] == "Executing"
-    else:
+        mask = (df["State"] == "Executing") & mask
+    elif not all_cases:
         faulted_jobIds = df.loc[df["level"] == "Fatal", "jobId"].unique()
         faulted_cases_rows = df["jobId"].isin(faulted_jobIds)
-        mask = (df["State"] == "Executing") & ~faulted_cases_rows
+        mask = (df["State"] == "Executing") & ~faulted_cases_rows & mask
     df = df[mask]
     df["ActivityName"] = df["DisplayName"] + "|" + df["State"] + "|" + df["fileName"]
 
     df.reset_index(inplace=True, drop=True)
     ft = time.process_time()
+    df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"])
     df.rename(columns={
         "processName": Columns.PROCESS_NAME.value,
         "jobId": Columns.CASE_ID.value,
@@ -39,7 +41,9 @@ def read_uipath_log_file_as_df(data, with_faulted_cases = False):
         "timeStamp": Columns.TIMESTAMP.value,
         "ActivityName": Columns.ACTIVITY_NAME.value
     }, inplace=True)
-    print(f"Užkrautas {os.path.basename(data)} failas. Laikas: {ft - st}")
+    if not isinstance(data, str):
+        data = type(data)
+    print(f"Užkrautas {os.path.basename(str(data))} failas. Laikas: {ft - st}")
     return df[[Columns.PROCESS_NAME.value,
                Columns.CASE_ID.value,
                Columns.TIMESTAMP_DATETIME.value,
