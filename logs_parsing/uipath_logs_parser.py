@@ -5,16 +5,16 @@ import json
 import re
 from pandas.io.json import json_normalize
 import time
-from logs_parsing.log_loader import read_uipath_log_file_as_df
+from logs_parsing.log_loader import read_uipath_log_file_as_df, Columns
 
-ROOT_DIR = r"D:\Magistrinio darbo duomenys"
+ROOT_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data"
 os.chdir(ROOT_DIR)
 
 
 class UiPathLogsParser():
 
     def __init__(self, log_files=[]):
-        self.list_logs_df = None
+        self._list_logs_df = None
         if log_files:
             if isinstance(log_files, str):
                 log_files = [log_files]
@@ -22,14 +22,22 @@ class UiPathLogsParser():
             log_files = []
         self.log_files = log_files
 
-    def _append_log_df(self, df):
-        if self.list_logs_df is None:
-            self.list_logs_df = df
+    def build_logs_dataframe(self, process_name):
+        if self.log_files[0].strip().endswith("pickle"):
+            print("Building from pickle files")
+            self._read_uipath_pickle_logs(process_name)
         else:
-            self.list_logs_df.append(df)
+            print("Building from log files")
+            self._read_uipath_logs_as_df_v2(process_name)
+
+    def _append_log_df(self, df):
+        if self._list_logs_df is None:
+            self._list_logs_df = [df]
+        else:
+            self._list_logs_df.append(df)
 
     def _fill_transaction_ids(self):
-        self.list_logs_df
+        self._list_logs_df
 
     # for cikle yra sužymimi visi transactionID kiekvienai transakcijai nuo pradžos iki pabaigos
     def _save_logs_by_processes(self, process_name):
@@ -111,7 +119,72 @@ class UiPathLogsParser():
             , "processVersion": jdata["processVersion"]
         }
 
-    def read_logs_as_df(self, log_path=None, process_name=None):
+    def _read_uipath_pickle_logs(self, process_name):
+        print(f"Reading pickle files for process {process_name}")
+        ms_st = time.process_time()
+        for i, pickle_file in enumerate(self.log_files):
+            st = time.process_time()
+            pickle_df = pd.read_pickle(pickle_file)
+            if process_name:
+                mask = pickle_df["processName"] == process_name
+                pickle_df = pickle_df[mask]
+            if not hasattr(self, "logs_dataframe"):
+                self.logs_dataframe = pickle_df
+            else:
+                self.logs_dataframe = self.logs_dataframe.append(pickle_df, ignore_index=True)
+            ft = time.process_time()
+            print(f"{i} file read. {os.path.basename(pickle_file)}. Elapsed time {ft-st}. Total elapsed time {ft-ms_st}")
+
+    def _read_uipath_logs_as_df_v2(self, process_name=None):
+        print("Building from log files (with json) parsing")
+        main_st = time.process_time()
+        for log in self.log_files:
+            st = time.process_time()
+            with open(log, "r", encoding="utf-8") as file:
+                text = file.read()
+            json_text = re.sub("\d+:\d+:\d+\.\d+\s\w{4,5}\s{\"", "{\"", text).strip()
+            if json_text[0] != "{":
+                json_text = json_text[1:]
+            df: pd.DataFrame = pd.read_json(json_text, "records", lines=True)
+            mask = ~df["activityInfo"].isna()
+            df.loc[mask, "DisplayName"] = df.loc[mask, "activityInfo"].apply(lambda x: x["DisplayName"])
+            df.loc[mask, "State"] = df.loc[mask, "activityInfo"].apply(lambda x: x["State"])
+            if process_name:
+                mask = df["processName"] == process_name
+                df = df[mask]
+            if df.shape[0] == 0:
+                ft = time.process_time()
+                print(f"Loaded {os.path.basename(log)}. NO PROCESSES FOUND {process_name}. Elapsed time {ft - st}. Total elapsed time {ft - main_st}")
+                continue
+            cols_to_choose = ["processName"
+                    , "DisplayName"
+                    , "State"
+                    , "Activity"
+                    , "fileName"
+                    , "message"
+                    , "fingerprint"
+                    , "jobId"
+                    , "level"
+                    , "logF_TransactionID"
+                    , "timeStamp"
+                    , "transactionId"
+                    , "transactionState"
+                    , "transactionStatus"
+                    , "robotName"
+                    , "machineName"
+                    , "processVersion"]
+            cols_to_choose = [col for col in df.columns if col in cols_to_choose]
+            df = df[cols_to_choose]
+            if df["timeStamp"].dtype == object:
+                df["timeStamp"] = df["timeStamp"].str.replace("\+02:00", "")
+            if not hasattr(self, "logs_dataframe"):
+                self.logs_dataframe = df
+            else:
+                self.logs_dataframe.append(df)
+            ft = time.process_time()
+            print(f"Loaded {os.path.basename(log)}. Elapsed time {ft-st}. Total elapsed time {ft-main_st}")
+
+    def _read_uipath_logs_as_df(self, log_path=None, process_name=None):
         """
         log_path gali būti logų sąrašas (list) arba vienas failas
 
@@ -143,7 +216,7 @@ class UiPathLogsParser():
                         if jdata["processName"] != process_name:
                             continue
                     try:
-                        data = self.get_valid_values(jdata)
+                        data = UiPathLogsParser.get_valid_values(jdata)
                     except Exception as e:
                         print("Unable to parse data.", e)
                         continue
@@ -156,14 +229,13 @@ class UiPathLogsParser():
         df = pd.DataFrame(data_list)
         df["timeStamp"] = df["timeStamp"].str.replace("\+02:00", "")
         df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"])
-        self._append_log_df(df)
+        self.logs_dataframe = df
 
 
 if __name__ == "__main__":
     os.chdir(ROOT_DIR)
     folders = os.listdir()
     log_files_path = []
-    process_name = "NVP_Busenu_saugojimas_Prod_env"
     for folder in folders:
         if os.path.isfile(folder):
             continue
@@ -174,11 +246,13 @@ if __name__ == "__main__":
             log_files_path = log_path
     print(len(log_files_path))
 
+    process_name = "NVP_Busenu_saugojimas_Prod_env"
     uipath_log_parser = UiPathLogsParser(log_files_path)
+    uipath_log_parser.build_logs_dataframe(process_name=process_name)
 
-    uipath_log_parser.read_logs_as_df(process_name=process_name)
-    df: pd.DataFrame = pd.concat(uipath_log_parser.list_logs_df, ignore_index=True)
+    df: pd.DataFrame = uipath_log_parser.logs_dataframe
     df.reset_index(inplace=True)
     df = read_uipath_log_file_as_df(data=df, with_faulted_cases=True)
+    df[Columns.TIMESTAMP.value] = df[Columns.TIMESTAMP.value].astype(str)
     df.to_pickle(os.path.join(ROOT_DIR, f"{process_name}.pickle"))
-    df.to_json(os.path.join(ROOT_DIR, f"{process_name}.json"))
+    df.to_json(os.path.join(ROOT_DIR, f"{process_name}.json"), orient="records", lines=True)

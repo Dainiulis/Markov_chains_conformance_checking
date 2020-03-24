@@ -17,6 +17,9 @@ LOOP_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\loop_case
 work_log_df = read_uipath_log_file_as_df(WORK_lOG_PATH)
 
 work_markov = Markov(work_log_df)
+# work_markov.create_transition_matrix_v2()
+# work_markov.transition_matrix_to_pickle()
+# work_markov.transition_matrix_to_xlsx()
 
 try:
     work_markov.load_transition_matrix()

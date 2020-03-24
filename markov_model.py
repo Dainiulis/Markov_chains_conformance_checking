@@ -2,9 +2,13 @@ import pandas as pd
 import numpy as np
 import os
 import time
+
+from docutils.nodes import transition
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from logs_parsing.logs import Columns
+from logarithmic_regression import LogarithmicRegression
+
 
 class IllegalMarkovStateException(Exception):
     """Išimtis, kuomet esama būsena nerasta perėjimų matricoje"""
@@ -42,6 +46,9 @@ class Markov:
     def create_transition_matrix_v2(self):
         main_st = time.process_time()
         temp_df: pd.DataFrame = self.rpa_log.copy()
+        # temp_df["ActivityName"] = temp_df.groupby(["CaseId", "ActivityName"]).cumcount().astype(str) + \
+        #                           "_" + \
+        #                           temp_df["ActivityName"]
         temp_df["DurationFromStart"] = pd.np.nan
         temp_df["DurationBetweenActivities"] = pd.np.nan
         temp_df[Columns.NEXT_ACTIVITY.value] = pd.np.nan
@@ -55,9 +62,11 @@ class Markov:
             mask = temp_df[Columns.CASE_ID.value] == jobId
             index = temp_df.loc[mask].index.min()
             start_time = temp_df.loc[index, Columns.TIMESTAMP_DATETIME.value]
-            temp_df.loc[mask, "DurationFromStart"] = (temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - start_time).dt.seconds
+            temp_df.loc[mask, "DurationFromStart"] = (
+                    temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - start_time).dt.seconds
             temp_df.loc[mask, "DurationBetweenActivities"] = (
-                    temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value].shift(
+                    temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value] - temp_df.loc[
+                mask, Columns.TIMESTAMP_DATETIME.value].shift(
                 1)).dt.microseconds.fillna(0)
             temp_df.loc[mask, Columns.NEXT_ACTIVITY.value] = temp_df.loc[mask, Columns.ACTIVITY_NAME.value].shift(-1)
             temp_df.loc[mask, "NextActivityDurationFromStart"] = temp_df.loc[mask, "DurationFromStart"].shift(-1)
@@ -65,10 +74,13 @@ class Markov:
         temp_df[Columns.NEXT_ACTIVITY.value] = temp_df[Columns.NEXT_ACTIVITY.value].fillna("FINISH")
         ft = time.process_time()
         print(f"Pridėti perėjimo laikų ir sekančių įvykių stulpeliai. {ft - main_st} s.")
-        temp_df.to_pickle(os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.pickle"))
-
+        temp_df.to_pickle(
+            os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.pickle"))
+        # temp_df.to_excel(
+        #     os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.xlsx"))
         '''DataFrame visoms veikloms suskaičiuoti. Papildomai gaunamas maksimalus veiklų pasikartojimas vienam atvejui'''
-        activity_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value]).agg({Columns.ACTIVITY_NAME.value: "count"})
+        activity_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value]).agg(
+            {Columns.ACTIVITY_NAME.value: "count"})
         activity_count_df = activity_count_df.groupby(level=[Columns.ACTIVITY_NAME.value]).agg(
             {
                 Columns.ACTIVITY_NAME.value: [("TotalActivityCount", "sum"),
@@ -76,59 +88,6 @@ class Markov:
                                               ("MinCaseActivityCount", "min")]
             })
         activity_count_df.columns = activity_count_df.columns.get_level_values(1)
-
-        '''DataFrame max perejimams tarp veiklu suskaiciuoti'''
-        transition_count_df = temp_df.groupby([Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
-            {Columns.ACTIVITY_NAME.value: [("ActivityCount", "count")]})
-        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
-
-        '''Building probability regression model'''
-        transition_count_df["Probabilities"] = transition_count_df["ActivityCount"].apply(lambda x: np.ones(x, np.int8))
-        transtition_count_with_probabilities = transition_count_df.copy()
-        transition_count_df = transition_count_df.groupby(level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
-            {
-                "ActivityCount": [("MaxCaseTransitionCount", "max"),
-                                  ("MinCaseTransitionCount", "min"),
-                                  ("UniqueActivitiesCount", "count"),
-                                  ("MeanCaseTransitionCount", "mean")]
-            })
-        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
-
-        transtition_count_with_probabilities = transtition_count_with_probabilities.join(transition_count_df
-                                                                                         , on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
-        transtition_count_with_probabilities["ffill_zeros"] = transtition_count_with_probabilities["MaxCaseTransitionCount"] - transtition_count_with_probabilities["ActivityCount"]
-        transtition_count_with_probabilities["Probabilities"] = transtition_count_with_probabilities.apply(
-            lambda x: np.pad(x["Probabilities"], (0, x["ffill_zeros"]), 'constant')
-            , axis=1)
-
-        transtition_count_with_probabilities = transtition_count_with_probabilities.groupby(level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value])["Probabilities"] \
-            .apply(np.vstack) \
-            .apply(lambda x: np.sum(x, axis=0))
-
-        transition_count_df = transition_count_df.join(transtition_count_with_probabilities, on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
-        transition_count_df["Probabilities"] = transition_count_df["Probabilities"] / transition_count_df["UniqueActivitiesCount"]
-        transition_count_df["ProbabilitiesMean"] = transition_count_df["Probabilities"].apply(lambda x: x.mean())
-        mask_mean_is_one = transition_count_df["ProbabilitiesMean"] == 1.0
-        transition_count_df.loc[mask_mean_is_one, "Probabilities"] = transition_count_df.loc[mask_mean_is_one, "Probabilities"] \
-            .apply(lambda x: np.append(x, 0))
-
-        transition_count_df["x"] = transition_count_df["Probabilities"] \
-            .apply(lambda x: np.arange(1, x.shape[0] + 1) \
-                   .reshape(-1, 1))
-
-        transition_count_df["x_"] = transition_count_df["x"] \
-            .apply(lambda x: PolynomialFeatures(degree=self.POLYNOMIAL_DEGREE,
-                                                interaction_only=self.INTERACTION_ONLY,
-                                                include_bias=self.INCLUDE_BIAS) \
-                   .fit_transform(x))
-
-        '''Polynomial model'''
-        transition_count_df["model"] = transition_count_df[["x_", "Probabilities"]] \
-            .apply(lambda x: LinearRegression().fit(x["x_"], x["Probabilities"]), axis=1)
-
-        '''Linear model'''
-        transition_count_df["linear_model"] = transition_count_df[["x", "Probabilities"]] \
-            .apply(lambda x: LinearRegression().fit(x["x"], x["Probabilities"]), axis=1)
 
         '''Duration and transition count aggregation'''
         self.transition_matrix = temp_df.groupby([Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]) \
@@ -144,12 +103,112 @@ class Markov:
 
         self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
         self.transition_matrix = self.transition_matrix.join(activity_count_df, on=(Columns.ACTIVITY_NAME.value))
-        self.transition_matrix = self.transition_matrix.join(transition_count_df, on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
-        self.transition_matrix[Columns.PROBABILITY.value] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
+        self.transition_matrix[Columns.PROBABILITY.value] = self.transition_matrix["TransitionCount"] / \
+                                                            self.transition_matrix["TotalActivityCount"]
+
+        '''DataFrame max perejimams tarp veiklu suskaiciuoti'''
+        transition_count_df = temp_df.groupby(
+            [Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
+            {Columns.ACTIVITY_NAME.value: [("ActivityCount", "count")]})
+        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
+
+        '''Building probability regression model'''
+        transition_count_df[Columns.PROBABILITIES.value] = transition_count_df["ActivityCount"].apply(lambda x: np.ones(x, np.int8))
+        transtition_count_with_probabilities = transition_count_df.copy()
+        transition_count_df = transition_count_df.groupby(
+            level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
+            {
+                "ActivityCount": [("MaxCaseTransitionCount", "max"),
+                                  ("MinCaseTransitionCount", "min"),
+                                  ("UniqueActivitiesCount", "count"),
+                                  ("MeanCaseTransitionCount", "mean")]
+            })
+        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
+
+        transtition_count_with_probabilities = transtition_count_with_probabilities.join(transition_count_df
+                                                                                         , on=(
+                Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
+        transtition_count_with_probabilities["ffill_zeros"] = transtition_count_with_probabilities[
+                                                                  "MaxCaseTransitionCount"] - \
+                                                              transtition_count_with_probabilities["ActivityCount"]
+        transtition_count_with_probabilities[Columns.PROBABILITIES.value] = transtition_count_with_probabilities.apply(
+            lambda x: np.pad(x[Columns.PROBABILITIES.value], (0, x["ffill_zeros"]), 'constant')
+            , axis=1)
+
+        transtition_count_with_probabilities = \
+            transtition_count_with_probabilities.groupby(
+                level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value])[
+                Columns.PROBABILITIES.value] \
+                .apply(np.vstack) \
+                .apply(lambda x: np.sum(x, axis=0))
+
+        transition_count_df = transition_count_df.join(transtition_count_with_probabilities,
+                                                       on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
+        transition_count_df[Columns.PROBABILITIES.value] = transition_count_df[Columns.PROBABILITIES.value] / transition_count_df[
+            "UniqueActivitiesCount"]
+
+        transition_count_df = transition_count_df.join(self.transition_matrix[[Columns.PROBABILITY.value]],
+                                                       on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
+
+        transition_count_df["ProbabilitiesMean"] = transition_count_df[Columns.PROBABILITIES.value].apply(lambda x: x.mean())
+        transition_count_df[Columns.NTH_PROBABILITIES.value] = transition_count_df[Columns.PROBABILITIES.value]
+        
+        mask_mean_is_one = transition_count_df["ProbabilitiesMean"] == 1.0
+        transition_count_df.loc[mask_mean_is_one, Columns.PROBABILITIES.value] = transition_count_df.loc[
+            mask_mean_is_one, Columns.PROBABILITIES.value] \
+            .apply(lambda x: np.append(x, 0))
+        
+        # transition_count_df[Columns.NTH_PROBABILITIES.value] = transition_count_df[Columns.NTH_PROBABILITIES.value]\
+        #     .apply(lambda x: np.append(x, 0))
+        
+        transition_count_df["Original_Probabilities"] = transition_count_df[Columns.PROBABILITIES.value]
+        transition_count_df[Columns.PROBABILITIES.value] = transition_count_df[Columns.PROBABILITIES.value] * transition_count_df[
+            Columns.PROBABILITY.value]
+        transition_count_df.drop(columns=[Columns.PROBABILITY.value], inplace=True)
+
+        transition_count_df["x"] = transition_count_df[Columns.PROBABILITIES.value] \
+            .apply(lambda x: np.arange(1, x.shape[0] + 1).reshape(-1, 1))
+
+        transition_count_df["x_"] = transition_count_df["x"] \
+            .apply(lambda x: PolynomialFeatures(degree=self.POLYNOMIAL_DEGREE,
+                                                interaction_only=self.INTERACTION_ONLY,
+                                                include_bias=self.INCLUDE_BIAS) \
+                   .fit_transform(x))
+
+        '''Polynomial model'''
+        transition_count_df["model"] = transition_count_df[["x_", Columns.PROBABILITIES.value]] \
+            .apply(lambda x: LinearRegression().fit(x["x_"], x[Columns.PROBABILITIES.value]), axis=1)
+
+        '''Linear model'''
+        transition_count_df["linear_model"] = transition_count_df[["x", Columns.PROBABILITIES.value]] \
+            .apply(lambda x: LinearRegression().fit(x["x"], x[Columns.PROBABILITIES.value]), axis=1)
+
+        '''Logarithmic regression'''
+        transition_count_df["logarithmic_model"] = transition_count_df[["x", Columns.PROBABILITIES.value]] \
+            .apply(lambda x: LogarithmicRegression(x["x"].reshape(1, -1)[0], x[Columns.PROBABILITIES.value]), axis=1)
+
+        # '''Duration and transition count aggregation'''
+        # self.transition_matrix = temp_df.groupby([Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]) \
+        #     .agg({
+        #     "DurationFromStart": [("DurationFromStartMax", "max"),
+        #                           ("DurationFromStartMean", "mean")],
+        #     "NextActivityDurationFromStart": [("NextActivityDurationFromStartMax", "max"),
+        #                                       ("NextActivityDurationFromStartMean", "mean")],
+        #     "DurationToNextActivity": [("DurationToNextActivityMax", "max"),
+        #                                ("DurationToNextActivityMean", "mean")],
+        #     Columns.ACTIVITY_NAME.value: [("TransitionCount", "count")]
+        # })
+        #
+        # self.transition_matrix.columns = self.transition_matrix.columns.get_level_values(1)
+        # self.transition_matrix = self.transition_matrix.join(activity_count_df, on=(Columns.ACTIVITY_NAME.value))
+        # self.transition_matrix[Columns.PROBABILITY.value] = self.transition_matrix["TransitionCount"] / self.transition_matrix["TotalActivityCount"]
+        self.transition_matrix = self.transition_matrix.join(transition_count_df, on=(
+            Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
         self.transition_matrix[Columns.MEAN_TRANSITION_PROBABILITY_COEFFICIENT.value] = self.transition_matrix[Columns.PROBABILITY.value] * self.transition_matrix["MeanCaseTransitionCount"]
 
     def create_markov_transition_matrix(self):
         # Create datatable with unique activity names as index
+        # self.rpa_log["ActivityName"] = self.rpa_log.groupby(["CaseId", "ActivityName"]).cumcount().astype(str) + "_" + self.rpa_log["ActivityName"]
         markov_df = self.rpa_log[Columns.ACTIVITY_NAME.value].unique()
         markov_df = pd.DataFrame(index=markov_df, columns=["NextStates"])
 
@@ -260,13 +319,13 @@ class Markov:
         else:
             raise FileNotFoundError("Nerastas pickle failas", transition_matrix_path)
 
-    def transition_matrix_to_xlsx(self, file_name = "test", save_folder = TRANSITION_MATRICES_PATH):
+    def transition_matrix_to_xlsx(self, file_name="test", save_folder=TRANSITION_MATRICES_PATH):
         """Save transition matrix to xlsx"""
         st = time.process_time()
         if isinstance(self.rpa_log, pd.DataFrame):
             file_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         try:
-            self.transition_matrix.to_excel(os.path.join(save_folder, file_name+".xlsx"))
+            self.transition_matrix.to_excel(os.path.join(save_folder, file_name + ".xlsx"))
         except Exception as e:
             print(f"nepavyko išsaugit excelio. {e}")
         ft = time.process_time()
