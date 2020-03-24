@@ -7,7 +7,7 @@ from pandas.io.json import json_normalize
 import time
 from logs_parsing.log_loader import read_uipath_log_file_as_df, Columns
 
-ROOT_DIR = r"D:\Magistrinio darbo duomenys"
+ROOT_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data"
 os.chdir(ROOT_DIR)
 
 

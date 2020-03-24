@@ -11,6 +11,8 @@ class Columns(Enum):
     NEXT_ACTIVITY = "NextActivity"
     MEAN_TRANSITION_PROBABILITY_COEFFICIENT = "Mean transition probability coefficient"
     PROBABILITY = "Probability"
+    NTH_PROBABILITIES = "NthProbabilities"
+    PROBABILITIES = "Probabilities"
 
 
 class Log():
