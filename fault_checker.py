@@ -64,7 +64,7 @@ class FaultChecker:
         self.current_activity_timestamp_datetime = activity_row[Columns.TIMESTAMP_DATETIME.value]
 
     def _set_next_activities_df(self):
-        self.next_activities_df = self.markov_model.get_activity_probability_v2(
+        self.next_activities_df = self.markov_model.get_transition_next_activities(
             cur_activity_name=self.current_activity_name)
 
     def _check_current_row_in_next_activities_df(self):
