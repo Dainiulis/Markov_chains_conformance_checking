@@ -20,11 +20,12 @@ work_markov = Markov(work_log_df)
 # work_markov.create_transition_matrix_v2()
 # work_markov.transition_matrix_to_pickle()
 # work_markov.transition_matrix_to_xlsx()
-
+# work_markov.create_markov_transition_matrix()
+# work_markov.transition_matrix_to_xlsx(file_prefix="MARKOV")
 try:
     work_markov.load_transition_matrix()
 except FileNotFoundError:
-    work_markov.create_transition_matrix_v2()
+    work_markov.create_transition_graph()
     work_markov.transition_matrix_to_pickle()
 work_markov.transition_matrix_to_xlsx()
 

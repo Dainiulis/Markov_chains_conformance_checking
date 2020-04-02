@@ -42,7 +42,7 @@ class MarkovMonitor:
         self.faults.append([self.cur_job_id, classifier, fault_message])
 
     def _set_next_activities_df(self):
-        self.next_activities_df = self.markov_model.get_activity_probability_v2(
+        self.next_activities_df = self.markov_model.get_transition_next_activities(
             cur_activity_name=self.cur_activity_name)
 
     def _check_for_faults(self):
