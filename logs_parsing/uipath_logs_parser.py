@@ -7,14 +7,14 @@ from pandas.io.json import json_normalize
 import time
 from logs_parsing.log_loader import read_uipath_log_file_as_df, Columns
 
-ROOT_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data"
+ROOT_DIR = r"D:\Magistrinio darbo duomenys"
 os.chdir(ROOT_DIR)
 TEMP_DIR = r"D:\Temp"
 
 
 class UiPathLogsParser():
 
-    def __init__(self, log_files=[], process_name=None):
+    def __init__(self, log_files=[], process_name=None, save_raw=False):
         self._list_logs_df = None
         if log_files:
             if isinstance(log_files, str):
@@ -24,6 +24,7 @@ class UiPathLogsParser():
         self.log_files = log_files
         self.main_st = time.process_time()
         self.process_name = process_name
+        self.save_raw = save_raw
 
     def build_logs_dataframe(self):
         if self.log_files[0].strip().endswith("pickle"):
@@ -281,10 +282,16 @@ class UiPathLogsParser():
     def _save_logs_from_memory(self, process_name_to_save):
         df: pd.DataFrame = uipath_log_parser.logs_dataframe
         df.reset_index(inplace=True)
-        df = read_uipath_log_file_as_df(data=df, with_faulted_cases=True)
-        df[Columns.TIMESTAMP.value] = df[Columns.TIMESTAMP.value].astype(str)
-        df.to_pickle(os.path.join(ROOT_DIR, "LOGS", f"{process_name_to_save}.pickle"))
-        df.to_json(os.path.join(ROOT_DIR, "LOGS", f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
+        folder_path = os.path.join(ROOT_DIR, "LOGS")
+        if not self.save_raw:
+            df = read_uipath_log_file_as_df(data=df, without_fatal=True, only_executing=True)
+            df[Columns.TIMESTAMP.value] = df[Columns.TIMESTAMP.value].astype(str)
+        else:
+            folder_path = folder_path + "_RAW"
+        if not os.path.isdir(folder_path):
+            os.mkdir(folder_path)
+        df.to_pickle(os.path.join(folder_path, f"{process_name_to_save}.pickle"))
+        #df.to_json(os.path.join(folder_path, f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
 
     def _save_pickle_logs_by_processes(self):
         if self.process_name is not None:
@@ -314,5 +321,5 @@ if __name__ == "__main__":
             log_files_path = log_path
     print(len(log_files_path))
     process_name = "NVP_Busenu_saugojimas_Prod_env"
-    uipath_log_parser = UiPathLogsParser(log_files_path)
+    uipath_log_parser = UiPathLogsParser(log_files_path, save_raw=False)
     uipath_log_parser.build_logs_dataframe()

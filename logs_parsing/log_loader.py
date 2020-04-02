@@ -4,7 +4,7 @@ import os
 from logs_parsing.logs import Columns
 
 
-def read_uipath_log_file_as_df(data, with_faulted_cases = False, all_cases = False):
+def read_uipath_log_file_as_df(data, only_executing = True, without_fatal = True):
     """Užkraunamas pickle failas
     params:
     data - .pickle file path arba dataframe
@@ -21,13 +21,14 @@ def read_uipath_log_file_as_df(data, with_faulted_cases = False, all_cases = Fal
         else:
             raise Exception(f"Data type {type(data)} not supported")
     # Filtering
-    mask = df["level"] == "Trace"
-    if with_faulted_cases:
-        mask = (df["State"] == "Executing") & mask
-    elif not all_cases:
+    if without_fatal:
         faulted_jobIds = df.loc[df["level"] == "Fatal", "jobId"].unique()
         faulted_cases_rows = df["jobId"].isin(faulted_jobIds)
-        mask = (df["State"] == "Executing") & ~faulted_cases_rows & mask
+        df = df[~faulted_cases_rows].copy()
+    mask = (df["level"] == "Trace") & (df["State"] != "Closed")
+    if only_executing:
+        mask = (df["State"] == "Executing") & mask
+
     df = df[mask].copy()
     df["ActivityName"] = df["DisplayName"] + "|" + df["State"] + "|" + df["fileName"]
 
