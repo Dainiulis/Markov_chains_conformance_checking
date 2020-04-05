@@ -11,6 +11,7 @@ from logs_parsing.logs import Columns
 from fault_checker import FaultChecker
 
 WORK_lOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\work_data.pickle"
+WORK_lOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\NKAK_Lydejimas_Prod_env.pickle"
 TEST_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\test_data.pickle"
 LOOP_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\loop_case.pickle"
 
@@ -29,7 +30,7 @@ except FileNotFoundError:
     work_markov.transition_matrix_to_pickle()
 work_markov.transition_matrix_to_xlsx()
 
-test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH, with_faulted_cases=True)
+test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH, only_executing=True, without_fatal=False)
 
 main_st = perf_counter() #timestamp
 print("Unikalių atvejų: ", test_log_df[Columns.CASE_ID.value].unique().shape[0])

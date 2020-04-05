@@ -382,10 +382,10 @@ class Markov:
         ft = time.process_time()
         print(f"Perėjimų matrica išsaugota. Laikas {ft - st}")
 
-    def transition_matrix_to_pickle(self, file_prefix=None):
+    def transition_matrix_to_pickle(self, file_prefix=None, folder=TRANSITION_MATRICES_PATH):
         """Issaugoma perejimu matrica pickle failo fromatu (python failas), greitam jo uzkrovimui"""
         process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         if file_prefix is not None:
             process_name = file_prefix + "_" + process_name
 
-        self.transition_matrix.to_pickle(os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle"))
+        self.transition_matrix.to_pickle(os.path.join(folder, process_name + ".pickle"))
