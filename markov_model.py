@@ -7,7 +7,7 @@ from docutils.nodes import transition
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from logs_parsing.logs import Columns
-from logarithmic_regression import LogarithmicRegression
+from logarithmic_regression import ExponentialRegression
 
 
 class IllegalMarkovStateException(Exception):
@@ -212,7 +212,7 @@ class Markov:
 
         '''Logarithmic regression'''
         transition_count_df["logarithmic_model"] = transition_count_df[["x", Columns.PROBABILITIES.value + "_w0"]] \
-            .apply(lambda x: LogarithmicRegression(np.append(x["x"].reshape(1, -1)[0],
+            .apply(lambda x: ExponentialRegression(np.append(x["x"].reshape(1, -1)[0],
                                                              x[Columns.PROBABILITIES.value + "_w0"].shape[0]),
                                                    x[Columns.PROBABILITIES.value + "_w0"]),
                    axis=1)

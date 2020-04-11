@@ -1,17 +1,16 @@
 import pandas as pd
-import numpy as np
-from markov_model import Markov, IllegalMarkovStateException
+from transition_graph import TransitionGraph
 from logs_parsing.logs import Columns
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
-import copy
+from logarithmic_regression import ExponentialRegression
+
+R = 10 ** -10
 
 
 class FaultChecker:
 
-    def __init__(self, markov_model: Markov):
+    def __init__(self, transition_graph_model: TransitionGraph):
         self.next_activities_df = pd.DataFrame()
-        self.markov_model = markov_model
+        self.transition_graph_model = transition_graph_model
         self.transitions_counts = {}
         self.faults = []
         self.faults_dict = {}
@@ -23,6 +22,8 @@ class FaultChecker:
             custom_fault_values = {}
         for key, value in extra_fault_values:
             custom_fault_values[key] = value
+        if hasattr(self, "message"):
+            custom_fault_values["message"] = self.message
         custom_fault_values["Klaidos tipas"] = fault_type
         custom_fault_values["Esama veikla"] = self.current_activity_name
         custom_fault_values["Buvusi veikla"] = self.previous_activity_name
@@ -62,9 +63,11 @@ class FaultChecker:
             self.case_id = activity_row[Columns.CASE_ID.value]
         self.current_activity_name = activity_row[Columns.ACTIVITY_NAME.value]
         self.current_activity_timestamp_datetime = activity_row[Columns.TIMESTAMP_DATETIME.value]
+        if "message" in activity_row.index:
+            self.message = activity_row["message"]
 
     def _set_next_activities_df(self):
-        self.next_activities_df = self.markov_model.get_transition_next_activities(
+        self.next_activities_df = self.transition_graph_model.get_transition_next_activities(
             cur_activity_name=self.current_activity_name)
 
     def _check_current_row_in_next_activities_df(self):
@@ -86,7 +89,7 @@ class FaultChecker:
             self._check_transition_faults()
 
     def _check_transition_faults(self):
-
+        """
         def __check_logarithmic_model():
             '''Logaritminės regresijos aptikimo būdas'''
             logarithmic_model = transition["logarithmic_model"]
@@ -103,10 +106,10 @@ class FaultChecker:
             '''Linijinės polinominės regresijos aptikimo būdas'''
             number_to_predict = np.array([self.transition_count]).reshape(-1, 1)
             polynomial_model = transition["model"]
-            y_prediction = polynomial_model.predict(PolynomialFeatures(degree=self.markov_model.POLYNOMIAL_DEGREE
-                                                                       , include_bias=self.markov_model.INCLUDE_BIAS
+            y_prediction = polynomial_model.predict(PolynomialFeatures(degree=self.transition_graph_model.POLYNOMIAL_DEGREE
+                                                                       , include_bias=self.transition_graph_model.INCLUDE_BIAS
                                                                        ,
-                                                                       interaction_only=self.markov_model.INTERACTION_ONLY) \
+                                                                       interaction_only=self.transition_graph_model.INTERACTION_ONLY) \
                                                     .fit_transform(number_to_predict))
             y_prob = y_prediction[0]
             if y_prob <= 0:
@@ -130,11 +133,6 @@ class FaultChecker:
                     self.linear_fault_counter += 1
                 else:
                     self.linear_fault_counter = 0
-
-        def __check_prob():
-            '''Paprasta tikimybinė klaida'''
-            if probability < 0.0005:
-                self.log_fault("Maža perėjimo tikimybė", custom_fault_values)
 
         def __check_transition_count():
             '''Euristinės taisyklės'''
@@ -163,7 +161,7 @@ class FaultChecker:
 
         def __check_nth_probability():
             '''Tikrinama tik n-toji tikimybė
-            Jeigu pagal indeks1 tikimybių nėra, tuomet laikoma, kad tikimybė = 0'''
+            Jeigu pagal indeksą tikimybių nėra, tuomet laikoma, kad tikimybė = 0'''
             transition_index = self.transition_count - 1
             nth_probabilities = transition[Columns.NTH_PROBABILITIES.value]
             if nth_probabilities.shape[0] > transition_index:
@@ -172,30 +170,43 @@ class FaultChecker:
                 nth_probability = 0
             if nth_probability == 0:
                 self.log_fault("N-toji tikimybė = 0", custom_fault_values)
+        """
+
+        def __predict_nth_probability_regression():
+            exponential_regression_model: ExponentialRegression = transition[
+                Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]
+            probability_prediction = exponential_regression_model.predict(self.transition_count)
+            if probability_prediction <= R:
+                custom_fault_values[Columns.PROBABILITY.value] = probability_prediction
+                custom_fault_values[Columns.MAX_CASE_TRANSITION_COUNT.value] = transition[Columns.MAX_CASE_TRANSITION_COUNT.value]
+                self.log_fault("Per daug perėjimų", custom_fault_values)
+                if hasattr(self, "exponential_regression_fault_counter"):
+                    self.exponential_regression_fault_counter += 1
+                    self.stop_checking = self.exponential_regression_fault_counter == 10
+                else:
+                    self.exponential_regression_fault_counter = 0
 
         transition: pd.DataFrame = self.next_activities_df.loc[self.current_activity_name]
         '''Transition row'''
-        probability = transition[Columns.PROBABILITY.value]
-        max_transition_cnt = transition["MaxCaseTransitionCount"]
+        # probability = transition[Columns.PROBABILITY.value]
         # max_case_activity_cnt = transition["MaxCaseActivityCount"]
-        custom_fault_values = {"Perėjimo skaičius": self.transition_count,
-                               "Maksimalus perėjimų skaičius": max_transition_cnt,
-                               "Perėjimo tikimybė": probability
+        custom_fault_values = {"Perėjimo skaičius": self.transition_count
+                               # "Perėjimo tikimybė": probability
                                }
-        __check_logarithmic_model()
-        __check_polynomial_regression_prob()
-        __check_linear_prob()
-        __check_prob()
-        __check_transition_count()
-        __check_transition_time()
-        __check_nth_probability()
-
-        if hasattr(self, "polynomial_fault_counter") \
-                and hasattr(self, "linear_fault_counter") \
-                and hasattr(self, "logarithmic_fault_counter"):
-            self.stop_checking = self.polynomial_fault_counter > 10 and \
-                                 self.linear_fault_counter > 10 and \
-                                 self.logarithmic_fault_counter > 10
+        __predict_nth_probability_regression()
+        # __check_logarithmic_model()
+        # __check_polynomial_regression_prob()
+        # __check_linear_prob()
+        # __check_prob()
+        # __check_transition_count()
+        # __check_transition_time()
+        # __check_nth_probability()
+        # if hasattr(self, "polynomial_fault_counter") \
+        #         and hasattr(self, "linear_fault_counter") \
+        #         and hasattr(self, "logarithmic_fault_counter"):
+        #     self.stop_checking = self.polynomial_fault_counter > 10 and \
+        #                          self.linear_fault_counter > 10 and \
+        #                          self.logarithmic_fault_counter > 10
 
     def _check_current_row_faults(self):
         """

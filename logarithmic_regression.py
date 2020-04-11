@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-class LogarithmicRegression():
+class ExponentialRegression():
 
     def __init__(self, x, y):
         """x ir y ašis.
@@ -11,11 +11,17 @@ class LogarithmicRegression():
             x = np.array(x)
         if isinstance(y, list):
             y = np.array(y)
+        if len(x) == 1:
+            x = np.array([1, 2, 3])
+            y = np.array([y[0], y[0]/10, 0])
+        elif len(x) == 2:
+            x = np.array([1, 2, 3])
+            y = np.append(y, 0)
         self.popt, self.pcov = curve_fit(self._function, x, y)
 
     def _function(self, x, a, b):
-        """Logaritminė funkcija"""
-        return a + b * np.log(x)
+        """Eksponentinė nykstanti funkcija"""
+        return a * np.exp(b * -x)
 
     def predict(self, x):
         """grąžina numanomą reikšmę

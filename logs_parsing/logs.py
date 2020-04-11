@@ -9,10 +9,13 @@ class Columns(Enum):
     TIMESTAMP = "TimeStamp"
     PROCESS_NAME = "ProcessName"
     NEXT_ACTIVITY = "NextActivity"
-    MEAN_TRANSITION_PROBABILITY_COEFFICIENT = "Mean transition probability coefficient"
     PROBABILITY = "Probability"
-    NTH_PROBABILITIES = "NthProbabilities"
+    NTH_PROBABILITIES = "nth_probabilities"
+    NTH_TRANSITION_COUNTS = "nth_transition_counts"
     PROBABILITIES = "Probabilities"
+    EXPONENTIAL_DECAY_REGRESSION_MODEL = "exponential_regression_model"
+    MAX_CASE_TRANSITION_COUNT = "max_case_transition_count"
+    ROBOT_NAME = "robotName"
 
 
 class Log():

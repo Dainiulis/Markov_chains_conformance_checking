@@ -1,21 +1,18 @@
-from markov_model import Markov, IllegalMarkovStateException
-from logs_parsing.log_loader import read_uipath_log_file_as_df
-from time import perf_counter
+from transition_graph import TransitionGraph
 import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
-from logs_parsing.logs import Columns
-from fault_checker import FaultChecker
 import os
 
 LOGS_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\Logs"
-for file in os.listdir(LOGS_PATH):
+print(len(os.listdir(LOGS_PATH)))
+x = 0
+for i, file in enumerate(os.listdir(LOGS_PATH)):
     log_df = pd.read_pickle(os.path.join(LOGS_PATH, file))
-    markov = Markov(log_df)
+    transition_graph = TransitionGraph(log_df)
     try:
-        markov.create_transition_graph()
-        markov.transition_matrix_to_pickle(folder=r"D:\Dainius\Documents\_Magistro darbas data\test_data\Models")
+        print(i, file)
+        transition_graph.create_transition_graph()
+        transition_graph.transition_matrix_to_pickle(folder=r"D:\Dainius\Documents\_Magistro darbas data\test_data\Models")
+        x += 1
     except Exception as e:
-        print(e)
-        print(f"Failed to create transition graph. for file {file}")
+        print(f"Failed to create transition graph. for file {file}. {e}")
+print(x)

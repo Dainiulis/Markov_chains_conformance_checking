@@ -7,10 +7,6 @@ from pandas.io.json import json_normalize
 import time
 from logs_parsing.log_loader import read_uipath_log_file_as_df, Columns
 
-ROOT_DIR = r"D:\Magistrinio darbo duomenys"
-os.chdir(ROOT_DIR)
-TEMP_DIR = r"D:\Temp"
-
 
 class UiPathLogsParser():
 
@@ -307,6 +303,11 @@ class UiPathLogsParser():
                 self._save_logs_from_memory(process_to_save)
 
 
+ROOT_DIR = r"D:\Magistrinio darbo duomenys"
+TEMP_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1\Temp"
+ROOT_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1"
+os.chdir(ROOT_DIR)
+
 if __name__ == "__main__":
     os.chdir(ROOT_DIR)
     folders = os.listdir()
@@ -321,5 +322,5 @@ if __name__ == "__main__":
             log_files_path = log_path
     print(len(log_files_path))
     process_name = "NVP_Busenu_saugojimas_Prod_env"
-    uipath_log_parser = UiPathLogsParser(log_files_path, save_raw=False)
+    uipath_log_parser = UiPathLogsParser(log_files_path, save_raw=True)
     uipath_log_parser.build_logs_dataframe()
