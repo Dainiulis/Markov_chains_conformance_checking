@@ -9,27 +9,25 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from logs_parsing.logs import Columns
 from fault_checker import FaultChecker
+from transition_graph import TransitionGraph
 
 WORK_lOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\work_data.pickle"
 TEST_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\test_data.pickle"
 LOOP_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\loop_case.pickle"
 
-work_log_df = read_uipath_log_file_as_df(WORK_lOG_PATH)
+WORK_lOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1\work_NVP_Busenu_saugojimas_Prod_env.pickle"
+TEST_LOG_PATH = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1\test_NVP_Busenu_saugojimas_Prod_env.pickle"
 
-work_markov = Markov(work_log_df)
-# work_markov.create_transition_matrix_v2()
-# work_markov.transition_matrix_to_pickle()
-# work_markov.transition_matrix_to_xlsx()
-# work_markov.create_markov_transition_matrix()
-# work_markov.transition_matrix_to_xlsx(file_prefix="MARKOV")
+work_log_df = read_uipath_log_file_as_df(WORK_lOG_PATH, information_logs=True)
+transition_graph = TransitionGraph(work_log_df)
 try:
-    work_markov.load_transition_matrix()
+    transition_graph.load_transition_matrix()
 except FileNotFoundError:
-    work_markov.create_transition_graph()
-    work_markov.transition_matrix_to_pickle()
-work_markov.transition_matrix_to_xlsx()
+    transition_graph.create_transition_graph()
+    transition_graph.transition_matrix_to_pickle()
+transition_graph.transition_matrix_to_xlsx()
 
-test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH, with_faulted_cases=True)
+test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH, only_executing=True, without_fatal=False, information_logs=True)
 
 main_st = perf_counter() #timestamp
 print("Unikalių atvejų: ", test_log_df[Columns.CASE_ID.value].unique().shape[0])
@@ -45,7 +43,7 @@ for case_id in test_log_df[Columns.CASE_ID.value].unique():
     df = test_log_df[case_mask].copy().reset_index(drop=True)
     case_st = df.loc[0, Columns.TIMESTAMP_DATETIME.value]
     checked_lines = 0
-    fault_checker = FaultChecker(work_markov)
+    fault_checker = FaultChecker(transition_graph)
     for i, row in df.iterrows():
         checked_lines = i
         fault_checker.check_faults(row)
@@ -54,20 +52,22 @@ for case_id in test_log_df[Columns.CASE_ID.value].unique():
     faults.extend(fault_checker.faults)
     faults2.extend(fault_checker.faults_dict.values())
     case_performance_time = perf_counter() - case_performance_time
-    time_analysis.append({"case_id": case_id,
-                          "case_performance_time": case_performance_time,
-                          "fault_count": len(fault_checker.faults),
-                          "traces_count": df.shape[0] })
+    analysis_row = {"case_id": case_id,
+                    "case_performance_time": case_performance_time,
+                    "fault_count": len(fault_checker.faults),
+                    "traces_count": df.shape[0]}
+    time_analysis.append(analysis_row)
+    print(analysis_row)
     # fault_checker.save_log()
 print(f"Finished in {perf_counter() - main_st}")
 
 print(len(faults), checked_lines)
 df = pd.DataFrame(data=faults)
-df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All1.xlsx", index=False)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All_info.xlsx", index=False)
 df = pd.DataFrame(data=faults2)
-df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All2.xlsx", index=False)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\All_info2.xlsx", index=False)
 df = pd.DataFrame(data=time_analysis)
-df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\analysis.xlsx", index=False)
+df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\analysis_info.xlsx", index=False)
 
 def test_with_manual_input():
     print("\n*********************\n")
@@ -94,7 +94,6 @@ def test_with_manual_input():
 
         #Tai paskutinis
         prev_activity_name = cur_activity_name
-
 
 def test_with_auto_input():
     test_log_df = read_uipath_log_file_as_df(TEST_LOG_PATH)

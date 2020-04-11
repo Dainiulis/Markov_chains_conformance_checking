@@ -7,7 +7,7 @@ from docutils.nodes import transition
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from logs_parsing.logs import Columns
-from logarithmic_regression import LogarithmicRegression
+from logarithmic_regression import ExponentialRegression
 
 
 class IllegalMarkovStateException(Exception):
@@ -212,7 +212,7 @@ class Markov:
 
         '''Logarithmic regression'''
         transition_count_df["logarithmic_model"] = transition_count_df[["x", Columns.PROBABILITIES.value + "_w0"]] \
-            .apply(lambda x: LogarithmicRegression(np.append(x["x"].reshape(1, -1)[0],
+            .apply(lambda x: ExponentialRegression(np.append(x["x"].reshape(1, -1)[0],
                                                              x[Columns.PROBABILITIES.value + "_w0"].shape[0]),
                                                    x[Columns.PROBABILITIES.value + "_w0"]),
                    axis=1)
@@ -382,10 +382,10 @@ class Markov:
         ft = time.process_time()
         print(f"Perėjimų matrica išsaugota. Laikas {ft - st}")
 
-    def transition_matrix_to_pickle(self, file_prefix=None):
+    def transition_matrix_to_pickle(self, file_prefix=None, folder=TRANSITION_MATRICES_PATH):
         """Issaugoma perejimu matrica pickle failo fromatu (python failas), greitam jo uzkrovimui"""
         process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         if file_prefix is not None:
             process_name = file_prefix + "_" + process_name
 
-        self.transition_matrix.to_pickle(os.path.join(Markov.TRANSITION_MATRICES_PATH, process_name + ".pickle"))
+        self.transition_matrix.to_pickle(os.path.join(folder, process_name + ".pickle"))
