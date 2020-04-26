@@ -1,14 +1,44 @@
 import pandas as pd
 from transition_graph import TransitionGraph
 from logs_parsing.logs import Columns
-from logarithmic_regression import ExponentialRegression
+from exponential_regression import ExponentialRegression
+import logging
+from colorlog import ColoredFormatter
+from datetime import datetime
+import constants
 
-R = 10 ** -10
+R = 10 ** -3
+
+
+def setup_logger(log_file_path =""):
+    """Return a logger with a default ColoredFormatter."""
+    formatter = ColoredFormatter(
+        "%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(message)s",
+        datefmt=None,
+        reset=True,
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'purple',
+        }
+    )
+    logging.basicConfig(handlers=[logging.FileHandler(log_file_path, 'w', 'utf-8')],
+                        format="%(message)s"
+                        )
+    logger = logging.getLogger('')
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+
+    return logger
 
 
 class FaultChecker:
 
-    def __init__(self, transition_graph_model: TransitionGraph):
+    def __init__(self, transition_graph_model: TransitionGraph, process_name = ""):
         self.next_activities_df = pd.DataFrame()
         self.transition_graph_model = transition_graph_model
         self.transitions_counts = {}
@@ -16,8 +46,10 @@ class FaultChecker:
         self.faults_dict = {}
         self.stop_checking = False
         self.faults_counter = {}
+        self.faults_log_file_path = r'{2}\{0:%Y-%m-%d_%H.%M.%S}_{1}.log'.format(datetime.now(), process_name, constants.FAULTS_LOGGING)
+        self.logger: logging.Logger = setup_logger(self.faults_log_file_path)
 
-    def log_fault(self, fault_type, custom_fault_values=None, **extra_fault_values):
+    def log_fault(self, fault_type, custom_fault_values=None, level=logging.ERROR, **extra_fault_values):
         if custom_fault_values is None:
             custom_fault_values = {}
         for key, value in extra_fault_values:
@@ -29,6 +61,8 @@ class FaultChecker:
         custom_fault_values["Buvusi veikla"] = self.previous_activity_name
         custom_fault_values[Columns.CASE_ID.value] = self.case_id
         self.faults.append(custom_fault_values.copy())
+        logging.error(custom_fault_values)
+
         if fault_type not in self.faults_dict.keys():
             self.faults_dict[fault_type] = custom_fault_values.copy()
         #     self.faults_counter[fault_type] = 1
@@ -39,13 +73,15 @@ class FaultChecker:
     def save_log(self):
         if self.faults:
             df = pd.DataFrame(data=self.faults)
-            df.to_excel(r"D:\Dainius\Documents\_Magistro darbas data\test_data\{0}.xlsx".format(self.case_id),
+            df.to_excel(r"{1}\{0}.xlsx".format(self.case_id, constants.FAULTS_EXCEL),
                         index=False)
 
     def check_faults(self, activity_row):
         """
         Naudojamas tik šis metodas
         """
+        if isinstance(activity_row, dict):
+            activity_row = pd.Series(activity_row)
         self._set_current_activity_values(activity_row)
         self._check_current_row_faults()
         self.previous_activity_name = self.current_activity_name
@@ -77,15 +113,15 @@ class FaultChecker:
         """
         # jeigu nerandama perėjimuose pagal praeitą įvįkį
         if self.current_activity_name not in self.next_activities_df.index:
-            self.log_fault("Negalimas perėjimas tarp veiklų")
+            self.log_fault("Negalimas perėjimas tarp veiklų", level=logging.WARNING)
         else:
             # jeigu randama, tuomet tikrinama pagal kelis būdus
             key = (self.previous_activity_name, self.current_activity_name)
-            if key in self.transitions_counts.keys():
-                self.transition_count = self.transitions_counts[key] + 1
-            else:
-                self.transition_count = 1
-            self.transitions_counts[key] = self.transition_count
+            try:
+                self.transitions_counts[key] += 1
+            except KeyError:
+                self.transitions_counts[key] = 1
+            self.transition_count = self.transitions_counts[key]
             self._check_transition_faults()
 
     def _check_transition_faults(self):
@@ -173,18 +209,13 @@ class FaultChecker:
         """
 
         def __predict_nth_probability_regression():
-            exponential_regression_model: ExponentialRegression = transition[
-                Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]
+            exponential_regression_model: ExponentialRegression = transition[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]
             probability_prediction = exponential_regression_model.predict(self.transition_count)
             if probability_prediction <= R:
                 custom_fault_values[Columns.PROBABILITY.value] = probability_prediction
-                custom_fault_values[Columns.MAX_CASE_TRANSITION_COUNT.value] = transition[Columns.MAX_CASE_TRANSITION_COUNT.value]
-                self.log_fault("Per daug perėjimų", custom_fault_values)
-                if hasattr(self, "exponential_regression_fault_counter"):
-                    self.exponential_regression_fault_counter += 1
-                    self.stop_checking = self.exponential_regression_fault_counter == 10
-                else:
-                    self.exponential_regression_fault_counter = 0
+                custom_fault_values[Columns.MAX_CASE_TRANSITION_COUNT.value] = transition[
+                    Columns.MAX_CASE_TRANSITION_COUNT.value]
+                self.log_fault("Per daug perėjimų", level=logging.ERROR, custom_fault_values=custom_fault_values)
 
         transition: pd.DataFrame = self.next_activities_df.loc[self.current_activity_name]
         '''Transition row'''
@@ -220,4 +251,4 @@ class FaultChecker:
         # surandamos sekančios veiklos ir patikrinama ar esama veikla galima
         self._set_next_activities_df()
         if self.next_activities_df.empty:
-            self.log_fault("Negalima esama veikla")
+            self.log_fault("Negalima esama veikla", level=logging.INFO)
