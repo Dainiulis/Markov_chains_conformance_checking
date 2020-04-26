@@ -46,12 +46,12 @@ def read_uipath_log_file_as_df(data, only_executing=True, without_fatal=True, in
             df = df[~faulted_cases_rows].copy()
         mask = (df["level"] == "Trace") & (df["State"] != "Closed")
         if only_executing:
-            mask = (df["State"] == "Executing") & mask
+            mask = ((df["State"] == "Executing") | (df["State"] == "Faulted")) & mask
         df = df[mask].copy()
         df["ActivityName"] = df["DisplayName"] + "|" + df["State"] + "|" + df["fileName"]
 
     df.reset_index(inplace=True, drop=True)
-    df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"].str.replace("\+02:00", ""))
+    df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"].str.replace("\+0[23]:00", "", regex=True))
     df.rename(columns={
         "processName": Columns.PROCESS_NAME.value,
         "jobId": Columns.CASE_ID.value,

@@ -1,4 +1,4 @@
-from markov_model import Markov, IllegalMarkovStateException
+from _MarkovChains import MarkovChains, IllegalStateException
 import pandas as pd
 
 
@@ -7,7 +7,7 @@ class LoopException(Exception):
     pass
 
 
-class MarkovMonitor:
+class RPAMonitoring:
 
     def __init__(self, markov_model):
         self.markov_model = markov_model

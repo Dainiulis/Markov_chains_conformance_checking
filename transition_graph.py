@@ -2,11 +2,12 @@ import pandas as pd
 import numpy as np
 import os
 import time
-
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
+import constants
 from logs_parsing.logs import Columns
-from logarithmic_regression import ExponentialRegression
+from exponential_regression import ExponentialRegression
+from tkinter.filedialog import askopenfilename
+from tkinter import messagebox
+
 
 class TransitionGraph:
     """Klasė inicializuojama naudojant dataframe.
@@ -16,20 +17,23 @@ class TransitionGraph:
     """
 
     '''Constants'''
-    TRANSITION_MATRICES_PATH = r"D:\Dainius\Documents\_Magistro darbas data\Python code\Markov_chains_conformance_checking\Data"
     POLYNOMIAL_DEGREE = 3
     INTERACTION_ONLY = False
     INCLUDE_BIAS = False
 
-    def __init__(self, rpa_log_df=None):
+    def __init__(self, rpa_log=None):
         # init markov class
         self.transition_matrix = None
-        self.transition_matrix = None
-        if isinstance(rpa_log_df, pd.DataFrame):
-            self.rpa_log = rpa_log_df
+        if isinstance(rpa_log, pd.DataFrame):
+            self.rpa_log = rpa_log
             self.case_count = self.rpa_log[Columns.CASE_ID.value].unique().shape[0]
-        elif rpa_log_df:
-            raise ValueError("Not pandas DataFrame")
+        elif isinstance(rpa_log, str):
+            if rpa_log.lower().strip().endswith("json"):
+                self.rpa_log = pd.read_json(rpa_log, orient="records", lines=True)
+            elif rpa_log.lower().strip().endswith("pickle"):
+                self.rpa_log = pd.read_pickle(rpa_log)
+            else:
+                raise ValueError("Not valid file path")
         else:
             """ 
             Įvykių žurnalas nepaduotas. Matrica turi būti užkraunama su tiksliu proceso pavadinimu iš pickle failo
@@ -43,22 +47,26 @@ class TransitionGraph:
         if not hasattr(self, "case_count"):
             self.case_count = self.rpa_log[Columns.CASE_ID.value].unique().shape[0]
         temp_df[Columns.NEXT_ACTIVITY.value] = pd.np.nan
-
+        temp_df["DurationBetweenActivities"] = pd.np.nan
         '''Surenkami perėjimai tarp veiklų, suskaičiuojamas laikas tarp perėjimų
         ir laikas nuo proceso pradžios iki veiklos, pabaigos veikla pažymima FINISH'''
         for jobId in temp_df[Columns.CASE_ID.value].unique():
             mask = temp_df[Columns.CASE_ID.value] == jobId
             temp_df.loc[mask, Columns.NEXT_ACTIVITY.value] = temp_df.loc[mask, Columns.ACTIVITY_NAME.value].shift(-1)
+            # temp_df.loc[mask, "DurationBetweenActivities"] = \
+            #     (temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value].shift(-1) -
+            #      temp_df.loc[mask, Columns.TIMESTAMP_DATETIME.value]).dt.total_seconds().fillna(0)
         temp_df[Columns.NEXT_ACTIVITY.value] = temp_df[Columns.NEXT_ACTIVITY.value].fillna("FINISH")
         ft = time.process_time()
         print(f"Pridėti perėjimo laikų ir sekančių įvykių stulpeliai. {ft - main_st} s.")
-        temp_df.to_pickle(
-            os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.pickle"))
+        # temp_df.to_pickle(
+        #     os.path.join(self.TRANSITION_MATRICES_PATH, "tarpiniai_modeliu_failai", "perejimai_suskaiciuoti.pickle"))
 
         '''DataFrame max perejimams tarp veiklu suskaiciuoti'''
         transition_count_df = temp_df.groupby(
             [Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
-            {Columns.ACTIVITY_NAME.value: [("activity_count", "count")]})
+            {Columns.ACTIVITY_NAME.value: [("activity_count", "count")],
+             "DurationBetweenActivities": [("duration_mean", "mean")]})
         transition_count_df.columns = transition_count_df.columns.get_level_values(1)
 
         '''Kuriami n-tųjų tikimybių modeliai'''
@@ -70,7 +78,8 @@ class TransitionGraph:
             level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
             {
                 "activity_count": [(Columns.MAX_CASE_TRANSITION_COUNT.value, "max"),
-                                   ("unique_transition_count", "count")]
+                                   ("unique_transition_count", "count")],
+                "duration_mean": [("duration_between_activities_mean", "mean")]
             })
         transition_count_df.columns = transition_count_df.columns.get_level_values(1)
 
@@ -87,9 +96,9 @@ class TransitionGraph:
                                                        axis=1)
 
         transtition_count_with_probabilities = transtition_count_with_probabilities.groupby(
-                level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value])[Columns.NTH_TRANSITION_COUNTS.value] \
-                .apply(np.vstack) \
-                .apply(lambda x: np.sum(x, axis=0))
+            level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value])[Columns.NTH_TRANSITION_COUNTS.value] \
+            .apply(np.vstack) \
+            .apply(lambda x: np.sum(x, axis=0))
 
         transition_count_df = transition_count_df.join(transtition_count_with_probabilities,
                                                        on=(Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
@@ -105,15 +114,15 @@ class TransitionGraph:
         # transition_count_df.to_excel(r"Data\test.xlsx")
         transition_count_df[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value] = \
             transition_count_df[["x", Columns.NTH_PROBABILITIES.value]] \
-            .apply(lambda x: ExponentialRegression(x["x"], x[Columns.NTH_PROBABILITIES.value]), axis=1)
+                .apply(lambda x: ExponentialRegression(x["x"], x[Columns.NTH_PROBABILITIES.value]), axis=1)
         exp_ft = time.process_time()
-        print(f"Sukurti eksponentinės regresijos modeliai. {exp_ft-exp_st} s")
-        transition_count_df["popt"] = transition_count_df[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]\
+        print(f"Sukurti eksponentinės regresijos modeliai. {exp_ft - exp_st} s")
+        transition_count_df["popt"] = transition_count_df[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value] \
             .apply(lambda x: x.popt)
         transition_count_df["pcov"] = transition_count_df[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value] \
             .apply(lambda x: x.pcov)
         self.transition_matrix = transition_count_df.copy()
-        print(f"Transition graph created in {time.process_time()-main_st} seconds")
+        print(f"Transition graph created in {time.process_time() - main_st} seconds")
 
     def get_transition_next_activities(self, prev_activity_name=None, cur_activity_name=None):
         '''
@@ -157,7 +166,8 @@ class TransitionGraph:
                 '''return empty data frame'''
                 return pd.DataFrame()
 
-    def load_transition_matrix(self, process_name=None, transition_matrices_path=TRANSITION_MATRICES_PATH, file_prefix=None):
+    def load_transition_matrix(self, process_name=None, transition_matrices_path=constants.TRANSITION_MATRICES_PATH,
+                               file_prefix=None):
         """Užkraunama istorinė perėjimų matrica, jeigu ji randama sukurta, kitu atveju sukuriama nauja
 
         Params:
@@ -182,7 +192,7 @@ class TransitionGraph:
         else:
             raise FileNotFoundError("Nerastas pickle failas", transition_matrix_path)
 
-    def transition_matrix_to_xlsx(self, file_name="test", save_folder=TRANSITION_MATRICES_PATH, file_prefix=None):
+    def transition_matrix_to_xlsx(self, file_name="test", save_folder=constants.TRANSITION_MATRICES_PATH, file_prefix=None):
         """Save transition matrix to xlsx"""
         st = time.process_time()
         if isinstance(self.rpa_log, pd.DataFrame):
@@ -196,10 +206,20 @@ class TransitionGraph:
         ft = time.process_time()
         print(f"Perėjimų matrica išsaugota. Laikas {ft - st}")
 
-    def transition_matrix_to_pickle(self, file_prefix=None, folder=TRANSITION_MATRICES_PATH):
+    def transition_matrix_to_pickle(self, file_prefix=None, folder=constants.TRANSITION_MATRICES_PATH):
         """Issaugoma perejimu matrica pickle failo fromatu (python failas), greitam jo uzkrovimui"""
         process_name = self.rpa_log.loc[0, Columns.PROCESS_NAME.value]
         if file_prefix is not None:
             process_name = file_prefix + "_" + process_name
 
         self.transition_matrix.to_pickle(os.path.join(folder, process_name + ".pickle"))
+
+if __name__ == "__main__":
+    log_path = askopenfilename()
+    if not log_path:
+        raise Exception("Nepasirinktas joks failas")
+    transition_graph = TransitionGraph(log_path)
+    transition_graph.create_transition_graph()
+    transition_graph.transition_matrix_to_pickle()
+    transition_graph.transition_matrix_to_xlsx()
+    messagebox.showinfo("Modelis sukurtas", f"Proceso {transition_graph.rpa_log[Columns.PROCESS_NAME.value][0]} modelis sukurtas kataloge: {constants.TRANSITION_MATRICES_PATH}")

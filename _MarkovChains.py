@@ -7,15 +7,15 @@ from docutils.nodes import transition
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from logs_parsing.logs import Columns
-from logarithmic_regression import ExponentialRegression
+from exponential_regression import ExponentialRegression
 
 
-class IllegalMarkovStateException(Exception):
+class IllegalStateException(Exception):
     """Išimtis, kuomet esama būsena nerasta perėjimų matricoje"""
     pass
 
 
-class Markov:
+class MarkovChains:
     """Klasė inicializuojama naudojant dataframe.
     Iškart sukuriama perėjimų matrica
 
@@ -23,20 +23,24 @@ class Markov:
     """
 
     '''Constants'''
-    TRANSITION_MATRICES_PATH = r"D:\Dainius\Documents\_Magistro darbas data\Python code\Markov_chains_conformance_checking\Data"
+    TRANSITION_MATRICES_PATH = r"D:\Models"
     POLYNOMIAL_DEGREE = 3
     INTERACTION_ONLY = False
     INCLUDE_BIAS = False
 
-    def __init__(self, rpa_log_df=None):
-        # init markov class
+    def __init__(self, rpa_log=None):
+        # init RPAMonitoringModel class
         self.transition_matrix = None
-        self.transition_matrix = None
-        if isinstance(rpa_log_df, pd.DataFrame):
-            self.rpa_log = rpa_log_df
+        if isinstance(rpa_log, pd.DataFrame):
+            self.rpa_log = rpa_log
             self.case_count = self.rpa_log[Columns.CASE_ID.value].unique().shape[0]
-        elif rpa_log_df:
-            raise ValueError("Not pandas DataFrame")
+        elif isinstance(rpa_log, str):
+            if rpa_log.lower().strip().endswith("json"):
+                self.rpa_log = pd.read_json(rpa_log, orient="records", lines=True)
+            elif rpa_log.lower().strip().endswith("pickle"):
+                self.rpa_log = pd.read_pickle(rpa_log)
+            else:
+                raise ValueError("Not pandas DataFrame")
         else:
             """ 
             Įvykių žurnalas nepaduotas. Matrica turi būti užkraunama su tiksliu proceso pavadinimu iš pickle failo
@@ -240,7 +244,7 @@ class Markov:
             Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value))
 
         '''Tikimybinis masyvas pagal darbo vadovo rekomendacijas'''
-        self.transition_matrix["probabillity_array"] = self.transition_matrix.apply(Markov.probability_counter, axis=1)
+        self.transition_matrix["probabillity_array"] = self.transition_matrix.apply(MarkovChains.probability_counter, axis=1)
         # self.transition_matrix["probability_array_ln_model"] = self.transition_matrix[["x", "probabillity_array"]] \
         #     .apply(lambda x: LogarithmicRegression(x["x"].reshape(1, -1)[0],
         #                                            x["probabillity_array"]),
@@ -337,9 +341,9 @@ class Markov:
         except KeyError as err:
             if err.args[0] == cur_activity_name:
                 # column not found (invalid current move)
-                raise IllegalMarkovStateException("Negalima esama veikla")
+                raise IllegalStateException("Negalima esama veikla")
             elif err.args[0] == prev_activity_name:
-                raise IllegalMarkovStateException("Negalima buvusi veikla")
+                raise IllegalStateException("Negalima buvusi veikla")
             else:
                 raise err
 

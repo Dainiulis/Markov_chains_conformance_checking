@@ -3,9 +3,13 @@ import pandas as pd
 import os
 import json
 import re
-from pandas.io.json import json_normalize
+import constants
 import time
 from logs_parsing.log_loader import read_uipath_log_file_as_df, Columns
+from logs_parsing.parse_uipath_log_line import get_valid_values, parse_uipath_log_line
+from tkinter.filedialog import askopenfilenames
+from tkinter import simpledialog
+from tkinter import messagebox
 
 
 class UiPathLogsParser():
@@ -21,6 +25,10 @@ class UiPathLogsParser():
         self.main_st = time.process_time()
         self.process_name = process_name
         self.save_raw = save_raw
+        if save_raw:
+            self.folder_path = os.path.join(ROOT_DIR, "LOGS_RAW")
+        else:
+            self.folder_path = os.path.join(ROOT_DIR, "LOGS")
 
     def build_logs_dataframe(self):
         if self.log_files[0].strip().endswith("pickle"):
@@ -67,56 +75,6 @@ class UiPathLogsParser():
         df_cpy.to_csv(file_path, index=False)
         df_cpy.to_pickle(file_path + ".pickle")
     """
-
-    # extraction of valid values
-    def get_valid_values(jdata):
-        display_name = ""
-        state = ""
-        logF_TransactionId = ""
-        transactionId = ""
-        transactionState = ""
-        transactionStatus = ""
-        file_name = ""
-        message = ""
-        activity = ""
-        activityInfo = ""
-        if "activityInfo" in jdata.keys():
-            display_name = jdata["activityInfo"]["DisplayName"]
-            state = jdata["activityInfo"]["State"]
-            activity = jdata["activityInfo"]["Activity"]
-            activityInfo = jdata["activityInfo"]
-        if "logF_TransactionID" in jdata.keys():
-            logF_TransactionId = jdata["logF_TransactionID"]
-        if "transactionId" in jdata.keys():
-            transactionId = jdata["transactionId"]
-        if "transactionState" in jdata.keys():
-            transactionState = jdata["transactionState"]
-        if "transactionStatus" in jdata.keys():
-            transactionStatus = jdata["transactionStatus"]
-        if "fileName" in jdata.keys():
-            file_name = jdata["fileName"]
-        if "message" in jdata.keys():
-            message = jdata["message"]
-
-        return {
-            "processName": jdata["processName"]
-            , "DisplayName": display_name
-            , "State": state
-            , "Activity": activity
-            , "fileName": file_name
-            , "message": message
-            , "fingerprint": jdata["fingerprint"]
-            , "jobId": jdata["jobId"]
-            , "level": jdata["level"]
-            , "logF_TransactionID": logF_TransactionId
-            , "timeStamp": jdata["timeStamp"]
-            , "transactionId": transactionId
-            , "transactionState": transactionState
-            , "transactionStatus": transactionStatus
-            , "robotName": jdata["robotName"]
-            , "machineName": jdata["machineName"]
-            , "processVersion": jdata["processVersion"]
-        }
 
     def _read_uipath_pickle_logs(self):
         print(f"Reading pickle files for process {process_name}")
@@ -246,15 +204,12 @@ class UiPathLogsParser():
                 if self.process_name:
                     if self.process_name not in line:
                         continue
-                data = line[1:]
-                data = re.sub("\d+:\d+:\d+\.\d+\s\w{4,5}\s{\"", "{\"", data).strip()
-                jdata = json.loads(data)
-                try:
-                    data = UiPathLogsParser.get_valid_values(jdata)
-                except Exception as e:
-                    print("Unable to parse data.", e)
+                data = parse_uipath_log_line(line)
+                if data:
+                    data_list.append(data)
+                else:
+                    print("Failed to parse line")
                     continue
-                data_list.append(data)
                 if i % 10000 == 0:
                     print(i, flush=True, end="\r")
                 i += 1
@@ -263,7 +218,7 @@ class UiPathLogsParser():
         if df.empty:
             print(f"Loaded {os.path.basename(log)}. NO PROCESSES FOUND {self.process_name}. Elapsed time {ft - start_time}. Total elapsed time {ft - self.main_st}")
             return df
-        df["timeStamp"] = df["timeStamp"].str.replace("\+02:00", "")
+        df["timeStamp"] = df["timeStamp"].str.replace("\+0[23]:00", "", regex=True)
         df["timeStamp_datetime"] = pd.to_datetime(df["timeStamp"])
         if not self.process_name:
             for unique_process_name in df["processName"].unique():
@@ -278,16 +233,15 @@ class UiPathLogsParser():
     def _save_logs_from_memory(self, process_name_to_save):
         df: pd.DataFrame = uipath_log_parser.logs_dataframe
         df.reset_index(inplace=True)
-        folder_path = os.path.join(ROOT_DIR, "LOGS")
+
         if not self.save_raw:
             df = read_uipath_log_file_as_df(data=df, without_fatal=True, only_executing=True)
             df[Columns.TIMESTAMP.value] = df[Columns.TIMESTAMP.value].astype(str)
-        else:
-            folder_path = folder_path + "_RAW"
-        if not os.path.isdir(folder_path):
-            os.mkdir(folder_path)
-        df.to_pickle(os.path.join(folder_path, f"{process_name_to_save}.pickle"))
-        #df.to_json(os.path.join(folder_path, f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
+
+        if not os.path.isdir(self.folder_path):
+            os.mkdir(self.folder_path)
+        df.to_pickle(os.path.join(self.folder_path, f"{process_name_to_save}.pickle"))
+        df.to_json(os.path.join(self.folder_path, f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
 
     def _save_pickle_logs_by_processes(self):
         if self.process_name is not None:
@@ -302,25 +256,27 @@ class UiPathLogsParser():
                 files = os.listdir(TEMP_DIR)
                 self._save_logs_from_memory(process_to_save)
 
-
-ROOT_DIR = r"D:\Magistrinio darbo duomenys"
-TEMP_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1\Temp"
-ROOT_DIR = r"D:\Dainius\Documents\_Magistro darbas data\test_data\VTIC-ESO-ROBOT1"
+TEMP_DIR = constants.TEMP_DIR
+ROOT_DIR = constants.ROOT_DIR
 os.chdir(ROOT_DIR)
 
 if __name__ == "__main__":
-    os.chdir(ROOT_DIR)
-    folders = os.listdir()
-    log_files_path = []
-    for folder in folders:
-        if os.path.isfile(folder):
-            continue
-        log_path = [os.path.join(ROOT_DIR, folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(ROOT_DIR, folder, f)) and f.endswith(".log")]
-        if log_files_path:
-            log_files_path += log_path
-        else:
-            log_files_path = log_path
-    print(len(log_files_path))
-    process_name = "NVP_Busenu_saugojimas_Prod_env"
-    uipath_log_parser = UiPathLogsParser(log_files_path, save_raw=True)
+    # os.chdir(ROOT_DIR)
+    # folders = os.listdir()
+    # log_files_path = []
+    # for folder in folders:
+    #     if os.path.isfile(folder):
+    #         continue
+    #     log_path = [os.path.join(ROOT_DIR, folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(ROOT_DIR, folder, f)) and f.endswith(".log")]
+    #     if log_files_path:
+    #         log_files_path += log_path
+    #     else:
+    #         log_files_path = log_path
+    # print(len(log_files_path))
+    log_files_path = askopenfilenames()
+    # application_window = tk.Tk()
+    process_name = simpledialog.askstring("UiPath žurnalų konvertavimas", "Įveskite pilną ir tikslų proceso pavadinimą arba palikite tuščią visiems procesams konvertuoti")
+    uipath_log_parser = UiPathLogsParser(log_files_path, process_name=process_name)
     uipath_log_parser.build_logs_dataframe()
+    messagebox.showinfo("UiPath žurnalų konvertavimas",
+                        f"Visi žurnalai konvertuoti ir išsaugoti aplanke {uipath_log_parser.folder_path}")
