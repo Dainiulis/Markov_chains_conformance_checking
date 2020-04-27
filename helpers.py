@@ -6,6 +6,7 @@ import shutil
 def move_old_log_files(log_path):
     if os.path.isfile(log_path):
         log_path = os.path.dirname(log_path)
+    print(f"Looking for old logs in {log_path}")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
     yesterday_log = os.path.join(log_path, f"Execution.{yesterday}.log")
     if os.path.isfile(yesterday_log):        
@@ -15,6 +16,8 @@ def move_old_log_files(log_path):
             os.makedirs(dest_dir)
         shutil.move(yesterday_log, dest_file)
         print("Archived log to ", dest_file)
+    else:
+        print("Nothing found")
 
 
 
