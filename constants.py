@@ -13,6 +13,7 @@ PERFORMANCE_LOG = r"O:\Senas_FDS\RPA\monitoring\monitoring_data\PerformanceTrack
 TRANSITION_MATRICES_PATH = r"O:\Senas_FDS\RPA\monitoring\monitoring_data\Models"
 TEMP_DIR = r"O:\Senas_FDS\RPA\monitoring\monitoring_data\Logs\Temp"
 ROOT_DIR = r"O:\Senas_FDS\RPA\monitoring\monitoring_data\Logs"
+LOGS_ARCHIVE = r'O:\Senas_FDS\RPA\monitoring\Logs'
 
 create_dir(FAULTS_EXCEL)
 create_dir(FAULTS_LOGGING)
