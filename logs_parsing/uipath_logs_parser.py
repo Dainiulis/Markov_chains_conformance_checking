@@ -1,6 +1,8 @@
 # imports required for parsing
 import pandas as pd
 import os
+import sys
+sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import json
 import re
 import constants
@@ -94,6 +96,7 @@ class UiPathLogsParser():
 
     def _load_all_logs_to_memory(self, process_name_to_load = None):
         st = time.process_time()
+        print("Loading process:", process_name_to_load)
         if process_name_to_load is not None:
             """Užkraunama tik su proceso pavadinimu"""
             pickle_files_to_load = [os.path.join(TEMP_DIR, f) for f in os.listdir(TEMP_DIR) if process_name_to_load in f]
@@ -104,7 +107,7 @@ class UiPathLogsParser():
             self.logs_dataframe = pd.concat(
                 [pd.read_pickle(os.path.join(TEMP_DIR, f)) for f in os.listdir(TEMP_DIR)])
         for f in os.listdir(TEMP_DIR):
-            if process_name_to_load in f or not process_name:
+            if process_name_to_load in f or not process_name_to_load:
                 os.remove(os.path.join(TEMP_DIR, f))
 
         ft = time.process_time()
@@ -249,12 +252,16 @@ class UiPathLogsParser():
             self._save_logs_from_memory(self.process_name)
         else:
             files = os.listdir(TEMP_DIR)
-            while files:
+            while files:                
                 process_to_save = pd.read_pickle(os.path.join(TEMP_DIR, files[0]))
                 process_to_save = process_to_save.iloc[0]["processName"]
-                self._load_all_logs_to_memory(process_to_save)
-                files = os.listdir(TEMP_DIR)
-                self._save_logs_from_memory(process_to_save)
+                print("Saving process", process_to_save)
+                try:
+                    self._load_all_logs_to_memory(process_to_save)
+                    files = os.listdir(TEMP_DIR)
+                    self._save_logs_from_memory(process_to_save)
+                except Exception as e:
+                    print("Failed saving process logs. ", str(e))
 
 TEMP_DIR = constants.TEMP_DIR
 ROOT_DIR = constants.ROOT_DIR

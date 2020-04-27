@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import time
 from logs_parsing.parse_uipath_log_line import get_uipath_log_line_for_conformance_checking
 from transition_graph import TransitionGraph
@@ -10,6 +12,7 @@ import constants
 
 
 def single_log_monitoring(file_path):
+    print("Monitoring started...")
     last_line = 0
     model_loaded = False
     executing = True
@@ -17,6 +20,7 @@ def single_log_monitoring(file_path):
     case_id = ""
     process_name = ""
     event_times = []
+    performance_times = []
     while executing:
         try:
             with open(file_path, mode='r', encoding='utf-8') as file:
@@ -24,6 +28,7 @@ def single_log_monitoring(file_path):
                 for line in file.readlines():
                     line_no += 1
                     if line_no == last_line + 1:
+                        st = time.perf_counter()
                         last_line = line_no
                         data = get_uipath_log_line_for_conformance_checking(line)
                         if data and not model_loaded:
@@ -37,7 +42,7 @@ def single_log_monitoring(file_path):
                         if data:
                             fault_checker.check_faults(data)
                             event_times.append(data[Columns.TIMESTAMP_DATETIME.value])
-
+                        performance_times.append(time.perf_counter() - st)
                         """Stabdom jeigu paskutinis"""
                         if "execution ended\"" in line:
                             executing = False
@@ -54,6 +59,7 @@ def single_log_monitoring(file_path):
     """Log performance params"""
     timedeltas = [event_times[i-1]-event_times[i] for i in range(1, len(event_times))]
     average_transition_time = (sum(timedeltas, timedelta(0)) / len(timedeltas)).seconds
+    performance_time = sum(performance_times) / len(performance_times)
     case_performance_time = time.perf_counter() - case_performance_time
     analysis_row = {"case_id": case_id,
                     "process_name": process_name,
@@ -66,7 +72,10 @@ def single_log_monitoring(file_path):
                     "average_transition_time (us)": average_transition_time,
                     "case_performance_time (us)": case_performance_time * 10**6,
                     "faults_log_path": fault_checker.faults_log_file_path,
-                    "finish_time": "{0}".format(datetime.now())}
+                    "finish_time": "{0}".format(datetime.now()),
+                    "performance_time": performance_time}
+    faults_counts = fault_checker.get_fault_counts()
+    analysis_row.update(faults_counts)
     try:
         with open(constants.PERFORMANCE_LOG, mode="a", encoding='utf-8') as f:
             f.write(json.dumps(analysis_row) + "\n")
@@ -76,9 +85,10 @@ def single_log_monitoring(file_path):
             f.write(json.dumps(analysis_row) + "\n")
 
     fault_checker.save_log()
-    print(last_line, "{0}".format(datetime.now()))
+    print("Monitoring ended.", last_line, "{0}".format(datetime.now()))
 
 
 if __name__ == "__main__":
     file_path = os.path.join(os.getenv('localappdata'), r'UiPath\Logs\Execution.log')
+    file_path = r"C:\Users\esorobot\AppData\Local\UiPath\Logs\Execution.log"
     single_log_monitoring(file_path)

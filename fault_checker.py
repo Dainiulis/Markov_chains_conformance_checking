@@ -7,7 +7,7 @@ from colorlog import ColoredFormatter
 from datetime import datetime
 import constants
 
-R = 10 ** -3
+R = 10 ** -5
 
 
 def setup_logger(log_file_path =""):
@@ -76,6 +76,17 @@ class FaultChecker:
             df.to_excel(r"{1}\{0}.xlsx".format(self.case_id, constants.FAULTS_EXCEL),
                         index=False)
 
+    def get_fault_counts(self):
+        fault_counts = {constants.FAULT_NEGALIMA_ESAMA_VEIKLA: 0,
+                        constants.FAULT_NEGALIMAS_PEREJIMAS: 0,
+                        constants.FAULT_PER_DAUG_PEREJIMU: 0}
+        if self.faults:
+            df = pd.DataFrame(data=self.faults)
+            fault_counts[constants.FAULT_NEGALIMA_ESAMA_VEIKLA] = len(df[df["Klaidos tipas"] == constants.FAULT_NEGALIMA_ESAMA_VEIKLA])
+            fault_counts[constants.FAULT_NEGALIMAS_PEREJIMAS] = len(df[df["Klaidos tipas"] == constants.FAULT_NEGALIMAS_PEREJIMAS])
+            fault_counts[constants.FAULT_PER_DAUG_PEREJIMU] = len(df[df["Klaidos tipas"] == constants.FAULT_PER_DAUG_PEREJIMU])
+        return fault_counts
+
     def check_faults(self, activity_row):
         """
         Naudojamas tik šis metodas
@@ -113,7 +124,7 @@ class FaultChecker:
         """
         # jeigu nerandama perėjimuose pagal praeitą įvįkį
         if self.current_activity_name not in self.next_activities_df.index:
-            self.log_fault("Negalimas perėjimas tarp veiklų", level=logging.WARNING)
+            self.log_fault(constants.FAULT_NEGALIMAS_PEREJIMAS, level=logging.WARNING)
         else:
             # jeigu randama, tuomet tikrinama pagal kelis būdus
             key = (self.previous_activity_name, self.current_activity_name)
@@ -125,89 +136,6 @@ class FaultChecker:
             self._check_transition_faults()
 
     def _check_transition_faults(self):
-        """
-        def __check_logarithmic_model():
-            '''Logaritminės regresijos aptikimo būdas'''
-            logarithmic_model = transition["logarithmic_model"]
-            y_prob = logarithmic_model.predict(self.transition_count)
-            if y_prob <= 0:
-                custom_fault_values["Apskaičiuota n-toji perėjimo tikimybė"] = y_prob
-                self.log_fault("Anomalija. Galimas ciklas (logaritminė regresija)", custom_fault_values)
-                if hasattr(self, "logarithmic_fault_counter"):
-                    self.logarithmic_fault_counter += 1
-                else:
-                    self.logarithmic_fault_counter = 0
-
-        def __check_polynomial_regression_prob():
-            '''Linijinės polinominės regresijos aptikimo būdas'''
-            number_to_predict = np.array([self.transition_count]).reshape(-1, 1)
-            polynomial_model = transition["model"]
-            y_prediction = polynomial_model.predict(PolynomialFeatures(degree=self.transition_graph_model.POLYNOMIAL_DEGREE
-                                                                       , include_bias=self.transition_graph_model.INCLUDE_BIAS
-                                                                       ,
-                                                                       interaction_only=self.transition_graph_model.INTERACTION_ONLY) \
-                                                    .fit_transform(number_to_predict))
-            y_prob = y_prediction[0]
-            if y_prob <= 0:
-                custom_fault_values["Apskaičiuota n-toji perėjimo tikimybė"] = y_prob
-                self.log_fault("Anomalija. Galimas ciklas (polinominė regresija)", custom_fault_values)
-                if hasattr(self, "polynomial_fault_counter"):
-                    self.polynomial_fault_counter += 1
-                else:
-                    self.polynomial_fault_counter = 0
-
-        def __check_linear_prob():
-            '''Linijinės regresijos aptikimo būdas'''
-            number_to_predict = np.array([self.transition_count]).reshape(-1, 1)
-            linear_model = transition["linear_model"]
-            y_prediction = linear_model.predict(number_to_predict)
-            y_prob = y_prediction[0]
-            if y_prob <= 0:
-                custom_fault_values["Apskaičiuota n-toji perėjimo tikimybė"] = y_prob
-                self.log_fault("Anomalija. Galimas ciklas (linijinė regresija)", custom_fault_values)
-                if hasattr(self, "linear_fault_counter"):
-                    self.linear_fault_counter += 1
-                else:
-                    self.linear_fault_counter = 0
-
-        def __check_transition_count():
-            '''Euristinės taisyklės'''
-            allowed_times_transition_count = 2
-            if self.transition_count > max_transition_cnt * allowed_times_transition_count:
-                self.log_fault(
-                    f"Pastebėtas {allowed_times_transition_count} kartus per didelis perėjimų skaičius tarp veiklų",
-                    custom_fault_values)
-
-        def __check_transition_time():
-            elapsed_time = (self.current_activity_timestamp_datetime - self.case_start_timestamp).seconds
-            duration_from_start_max = transition["DurationFromStartMax"]
-
-            custom_fault_values["Laikas nuo pradžios"] = elapsed_time
-            custom_fault_values["Buvęs maksimalus užfiksuotas laikas"] = duration_from_start_max
-            custom_fault_values["Laiko skirtumas"] = elapsed_time - duration_from_start_max
-
-            duration_overtime_times = int(duration_from_start_max / elapsed_time)
-
-            if duration_overtime_times == 1:
-                self.log_fault("Veikla įvyko vėliau nei numatyta", custom_fault_values)
-            elif duration_overtime_times > 1:
-                self.log_fault(
-                    f"Veikla įvyko {duration_overtime_times} kartus vėliau. ĮSPĖJIMAS: Galimas begalinis ciklas",
-                    custom_fault_values)
-
-        def __check_nth_probability():
-            '''Tikrinama tik n-toji tikimybė
-            Jeigu pagal indeksą tikimybių nėra, tuomet laikoma, kad tikimybė = 0'''
-            transition_index = self.transition_count - 1
-            nth_probabilities = transition[Columns.NTH_PROBABILITIES.value]
-            if nth_probabilities.shape[0] > transition_index:
-                nth_probability = nth_probabilities[transition_index]
-            else:
-                nth_probability = 0
-            if nth_probability == 0:
-                self.log_fault("N-toji tikimybė = 0", custom_fault_values)
-        """
-
         def __predict_nth_probability_regression():
             exponential_regression_model: ExponentialRegression = transition[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]
             probability_prediction = exponential_regression_model.predict(self.transition_count)
@@ -215,7 +143,7 @@ class FaultChecker:
                 custom_fault_values[Columns.PROBABILITY.value] = probability_prediction
                 custom_fault_values[Columns.MAX_CASE_TRANSITION_COUNT.value] = transition[
                     Columns.MAX_CASE_TRANSITION_COUNT.value]
-                self.log_fault("Per daug perėjimų", level=logging.ERROR, custom_fault_values=custom_fault_values)
+                self.log_fault(constants.FAULT_PER_DAUG_PEREJIMU, level=logging.ERROR, custom_fault_values=custom_fault_values)
 
         transition: pd.DataFrame = self.next_activities_df.loc[self.current_activity_name]
         '''Transition row'''
@@ -251,4 +179,4 @@ class FaultChecker:
         # surandamos sekančios veiklos ir patikrinama ar esama veikla galima
         self._set_next_activities_df()
         if self.next_activities_df.empty:
-            self.log_fault("Negalima esama veikla", level=logging.INFO)
+            self.log_fault(constants.FAULT_NEGALIMA_ESAMA_VEIKLA, level=logging.INFO)

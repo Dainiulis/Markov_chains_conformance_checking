@@ -79,14 +79,17 @@ def get_uipath_log_line_for_conformance_checking(line):
     data = parse_uipath_log_line(line)
     if not data:
         return None
-    if data["level"] != "Trace" or not data["DisplayName"] and (data["State"] != "Executing" or data["State"] != "Faulted"):
+    if data["level"] != "Trace" or not data["DisplayName"]:
+        return None
+    if data["State"] not in ["Executing", "Faulted"]:
         return None
     timestamp_datetime = pd.to_datetime(re.sub("\+0[23]:00", "", data["timeStamp"]))
     return {"ActivityName": data["DisplayName"] + "|" + data["State"] + "|" + data["fileName"],
             Columns.PROCESS_NAME.value: data["processName"],
             Columns.CASE_ID.value: data["jobId"],
             Columns.TIMESTAMP.value: data["timeStamp"],
-            Columns.TIMESTAMP_DATETIME.value: timestamp_datetime}
+            Columns.TIMESTAMP_DATETIME.value: timestamp_datetime,
+            Columns.ROBOT_NAME.value: data["robotName"]}
 
 if __name__ == "__main__":
     with open(r"C:\Users\daini\AppData\Local\UiPath\Logs\Execution.20200426.log", mode="r", encoding="utf-8") as f:

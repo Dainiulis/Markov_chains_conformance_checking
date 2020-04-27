@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import os
+import sys
+sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import time
 import constants
 from logs_parsing.logs import Columns
