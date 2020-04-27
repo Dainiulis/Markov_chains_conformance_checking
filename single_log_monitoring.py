@@ -11,7 +11,7 @@ import json
 import constants
 import psutil
 from transition_graph import TransitionGraph
-
+import random
 
 def single_log_monitoring(file_path):
     print("Monitoring started...")
@@ -85,7 +85,7 @@ def single_log_monitoring(file_path):
         with open(constants.PERFORMANCE_LOG, mode="a", encoding='utf-8') as f:
             f.write(json.dumps(analysis_row) + "\n")
     except Exception:
-        time.sleep(.5)
+        time.sleep(random.random()*10)
         with open(constants.PERFORMANCE_LOG, mode="a", encoding='utf-8') as f:
             f.write(json.dumps(analysis_row) + "\n")
 
