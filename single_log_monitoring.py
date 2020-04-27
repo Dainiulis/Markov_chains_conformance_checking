@@ -102,7 +102,7 @@ if __name__ == "__main__":
     file_path = os.path.join(os.getenv('localappdata'), r'UiPath\Logs\Execution.log')
     file_path = r"C:\Users\{0}\AppData\Local\UiPath\Logs\Execution.log".format(user_name)
 
-    time.sleep(4)
+    time.sleep(8)
     result = single_log_monitoring(file_path)
     if result != "DONE":
         log_path = os.path.join(constants.ROOT_DIR, "LOGS", result + ".pickle")
