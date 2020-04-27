@@ -22,6 +22,7 @@ def single_log_monitoring(file_path):
     case_performance_time = time.perf_counter()
     case_id = ""
     process_name = ""
+    process_version = ""
     event_times = []
     performance_times = []
     while executing:
@@ -39,6 +40,7 @@ def single_log_monitoring(file_path):
                             case_id = data[Columns.CASE_ID.value]
                             process_name = data[Columns.PROCESS_NAME.value]
                             robot_name = data[Columns.ROBOT_NAME.value]
+                            process_version = data["processVersion"]
                             try:
                                 transition_graph.load_transition_matrix(process_name)
                             except FileNotFoundError:
@@ -79,7 +81,8 @@ def single_log_monitoring(file_path):
                     "case_performance_time (us)": case_performance_time * 10**6,
                     "faults_log_path": fault_checker.faults_log_file_path,
                     "finish_time": "{0}".format(datetime.now()),
-                    "performance_time": performance_time}
+                    "performance_time": performance_time,
+                    "processVersion": process_version}
     faults_counts = fault_checker.get_fault_counts()
     analysis_row.update(faults_counts)
     try:

@@ -89,7 +89,8 @@ def get_uipath_log_line_for_conformance_checking(line):
             Columns.CASE_ID.value: data["jobId"],
             Columns.TIMESTAMP.value: data["timeStamp"],
             Columns.TIMESTAMP_DATETIME.value: timestamp_datetime,
-            Columns.ROBOT_NAME.value: data["robotName"]}
+            Columns.ROBOT_NAME.value: data["robotName"],
+            "processVersion": data["processVersion"]}
 
 if __name__ == "__main__":
     with open(r"C:\Users\daini\AppData\Local\UiPath\Logs\Execution.20200426.log", mode="r", encoding="utf-8") as f:
