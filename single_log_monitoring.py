@@ -9,6 +9,7 @@ from fault_checker import FaultChecker
 from datetime import datetime, timedelta
 import json
 import constants
+import psutil
 
 
 def single_log_monitoring(file_path):
@@ -89,6 +90,16 @@ def single_log_monitoring(file_path):
 
 
 if __name__ == "__main__":
+    try:
+        user_name = sys.argv[1]
+    except IndexError:
+        user_name = "esorobot"
     file_path = os.path.join(os.getenv('localappdata'), r'UiPath\Logs\Execution.log')
-    file_path = r"C:\Users\esorobot\AppData\Local\UiPath\Logs\Execution.log"
-    single_log_monitoring(file_path)
+    file_path = r"C:\Users\{0}\AppData\Local\UiPath\Logs\Execution.log".format(user_name)
+    while True:
+        eso_robot_logged_in = False
+        for user in psutil.users():
+            if user.name.lower() == user_name:
+                time.sleep(4)
+                single_log_monitoring(file_path)
+                time.sleep(5)
