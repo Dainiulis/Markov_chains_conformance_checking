@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
+# sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import time
 from logs_parsing.parse_uipath_log_line import get_uipath_log_line_for_conformance_checking
 from transition_graph import TransitionGraph
@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import json
 import constants
 import psutil
+from transition_graph import TransitionGraph
 
 
 def single_log_monitoring(file_path):
@@ -37,7 +38,10 @@ def single_log_monitoring(file_path):
                             case_id = data[Columns.CASE_ID.value]
                             process_name = data[Columns.PROCESS_NAME.value]
                             robot_name = data[Columns.ROBOT_NAME.value]
-                            transition_graph.load_transition_matrix(process_name)
+                            try:
+                                transition_graph.load_transition_matrix(process_name)
+                            except FileNotFoundError:
+                                return process_name
                             fault_checker = FaultChecker(transition_graph, process_name)
                             model_loaded = True
                         if data:
@@ -87,6 +91,7 @@ def single_log_monitoring(file_path):
 
     fault_checker.save_log()
     print("Monitoring ended.", last_line, "{0}".format(datetime.now()))
+    return "DONE"
 
 
 if __name__ == "__main__":
@@ -96,10 +101,21 @@ if __name__ == "__main__":
         user_name = "esorobot"
     file_path = os.path.join(os.getenv('localappdata'), r'UiPath\Logs\Execution.log')
     file_path = r"C:\Users\{0}\AppData\Local\UiPath\Logs\Execution.log".format(user_name)
-    while True:
-        eso_robot_logged_in = False
-        for user in psutil.users():
-            if user.name.lower() == user_name:
-                time.sleep(4)
-                single_log_monitoring(file_path)
-                time.sleep(5)
+
+    time.sleep(4)
+    result = single_log_monitoring(file_path)
+    if result != "DONE":
+        log_path = os.path.join(constants.ROOT_DIR, "LOGS", result + ".pickle")
+        transition_graph = TransitionGraph(log_path)
+        transition_graph.create_transition_graph()
+        transition_graph.transition_matrix_to_pickle()
+        transition_graph.transition_matrix_to_xlsx()
+        print("Modelis sukurtas", f"Proceso {transition_graph.rpa_log[Columns.PROCESS_NAME.value][0]} modelis sukurtas kataloge: {constants.TRANSITION_MATRICES_PATH}")
+        single_log_monitoring(file_path)
+    # while True:
+    #     eso_robot_logged_in = False
+    #     for user in psutil.users():
+    #         if user.name.lower() == user_name:
+    #             time.sleep(4)
+    #             single_log_monitoring(file_path)
+    #             time.sleep(5)

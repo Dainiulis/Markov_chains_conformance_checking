@@ -2,7 +2,7 @@
 import pandas as pd
 import os
 import sys
-sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
+# sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import json
 import re
 import constants
