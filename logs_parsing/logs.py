@@ -16,6 +16,8 @@ class Columns(Enum):
     EXPONENTIAL_DECAY_REGRESSION_MODEL = "exponential_regression_model"
     MAX_CASE_TRANSITION_COUNT = "max_case_transition_count"
     ROBOT_NAME = "robotName"
+    MEAN_TRANSITION_COUNT = "mean_transition_count"
+    MAX_TRANSITION_COUNT = "max_transition_count"
 
 
 class Log():

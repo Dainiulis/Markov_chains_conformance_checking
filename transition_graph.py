@@ -69,7 +69,7 @@ class TransitionGraph:
             [Columns.CASE_ID.value, Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
             {Columns.ACTIVITY_NAME.value: [("activity_count", "count")],
              "DurationBetweenActivities": [("duration_mean", "mean")]})
-        transition_count_df.columns = transition_count_df.columns.get_level_values(1)
+        transition_count_df.columns = transition_count_df.columns.get_level_values(1)       
 
         '''Kuriami n-tųjų tikimybių modeliai'''
         '''Skaičiuojami n-tieji perėjimai'''
@@ -80,6 +80,7 @@ class TransitionGraph:
             level=[Columns.ACTIVITY_NAME.value, Columns.NEXT_ACTIVITY.value]).agg(
             {
                 "activity_count": [(Columns.MAX_CASE_TRANSITION_COUNT.value, "max"),
+                                    ("mean_case_transition_count", "mean"),
                                    ("unique_transition_count", "count")],
                 "duration_mean": [("duration_between_activities_mean", "mean")]
             })
@@ -123,6 +124,11 @@ class TransitionGraph:
             .apply(lambda x: x.popt)
         transition_count_df["pcov"] = transition_count_df[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value] \
             .apply(lambda x: x.pcov)
+
+        """Suskaiciuojamas vidutinis ir maksimalus perejimu skaicius pagal atvejus"""
+        transitions_counts_by_case = temp_df.groupby([Columns.CASE_ID.value])[Columns.ACTIVITY_NAME.value].count()
+        transition_count_df[Columns.MEAN_TRANSITION_COUNT.value] = transitions_counts_by_case.mean()
+        transition_count_df[Columns.MAX_TRANSITION_COUNT] = transitions_counts_by_case.max()
         self.transition_matrix = transition_count_df.copy()
         print(f"Transition graph created in {time.process_time() - main_st} seconds")
 
@@ -216,6 +222,15 @@ class TransitionGraph:
 
         self.transition_matrix.to_pickle(os.path.join(folder, process_name + ".pickle"))
 
+
+    def get_mean_transition_count(self):
+        if Columns.MEAN_TRANSITION_COUNT.value in self.transition_matrix.columns:
+            print("Mean transition counts loaded")
+            return self.transition_matrix.iloc[0][Columns.MEAN_TRANSITION_COUNT.value]
+        else:
+            print("Mean case transition counts loaded")
+            return self.transition_matrix[Columns.MAX_CASE_TRANSITION_COUNT.value].sum()
+
 if __name__ == "__main__":
     log_path = askopenfilename()
     if not log_path:
@@ -224,4 +239,6 @@ if __name__ == "__main__":
     transition_graph.create_transition_graph()
     transition_graph.transition_matrix_to_pickle()
     transition_graph.transition_matrix_to_xlsx()
+    transition_counts = transition_graph.get_mean_transition_count()
+    print(transition_counts)
     messagebox.showinfo("Modelis sukurtas", f"Proceso {transition_graph.rpa_log[Columns.PROCESS_NAME.value][0]} modelis sukurtas kataloge: {constants.TRANSITION_MATRICES_PATH}")

@@ -6,6 +6,7 @@ import logging
 from colorlog import ColoredFormatter
 from datetime import datetime
 import constants
+from emails import send_email
 
 R = 10 ** -5
 
@@ -46,8 +47,11 @@ class FaultChecker:
         self.faults_dict = {}
         self.stop_checking = False
         self.faults_counter = {}
+        self.process_name = process_name
         self.faults_log_file_path = r'{2}\{0:%Y-%m-%d_%H.%M.%S}_{1}.log'.format(datetime.now(), process_name, constants.FAULTS_LOGGING)
-        self.logger: logging.Logger = setup_logger(self.faults_log_file_path)
+        self.logger: logging.Logger = setup_logger(self.faults_log_file_path)        
+        self.mean_transition_counts = transition_graph_model.get_mean_transition_count()
+        self.informed_about_faults = False
 
     def log_fault(self, fault_type, custom_fault_values=None, level=logging.ERROR, **extra_fault_values):
         if custom_fault_values is None:
@@ -62,6 +66,12 @@ class FaultChecker:
         custom_fault_values[Columns.CASE_ID.value] = self.case_id
         self.faults.append(custom_fault_values.copy())
         logging.error(custom_fault_values)
+        if not self.informed_about_faults:
+            if len(self.faults) / self.mean_transition_counts > 0.1:
+                send_email(["dainius.mieziunas@eso.lt"], 
+                            self.process_name, 
+                            f"Pastebeta daug klaidu {len(self.faults)}. Klaidu santykis {len(self.faults) / self.mean_transition_counts}")
+                self.informed_about_faults = True
 
         if fault_type not in self.faults_dict.keys():
             self.faults_dict[fault_type] = custom_fault_values.copy()
@@ -108,6 +118,7 @@ class FaultChecker:
             # pirmas įvykis, todėl išsaugoma pirmojo įvykio laiko žymė
             self.case_start_timestamp = activity_row[Columns.TIMESTAMP_DATETIME.value]
             self.case_id = activity_row[Columns.CASE_ID.value]
+                
         self.current_activity_name = activity_row[Columns.ACTIVITY_NAME.value]
         self.current_activity_timestamp_datetime = activity_row[Columns.TIMESTAMP_DATETIME.value]
         if "message" in activity_row.index:

@@ -2,6 +2,7 @@
 import pandas as pd
 import os
 import sys
+sys.path.append('..')
 # sys.path.insert(0, r"O:\Senas_FDS\RPA\monitoring\Markov_chains_conformance_checking")
 import json
 import re
@@ -244,7 +245,10 @@ class UiPathLogsParser():
         if not os.path.isdir(self.folder_path):
             os.mkdir(self.folder_path)
         df.to_pickle(os.path.join(self.folder_path, f"{process_name_to_save}.pickle"))
-        df.to_json(os.path.join(self.folder_path, f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
+        try:
+            df.to_json(os.path.join(self.folder_path, f"{process_name_to_save}.json"), orient="records", lines=True, force_ascii=False)
+        except Exception as e:
+            print(f"Unable to extract to json {process_name_to_save}")
 
     def _save_pickle_logs_by_processes(self):
         if self.process_name is not None:
@@ -268,21 +272,26 @@ ROOT_DIR = constants.ROOT_DIR
 os.chdir(ROOT_DIR)
 
 if __name__ == "__main__":
-    # os.chdir(ROOT_DIR)
-    # folders = os.listdir()
-    # log_files_path = []
-    # for folder in folders:
-    #     if os.path.isfile(folder):
-    #         continue
-    #     log_path = [os.path.join(ROOT_DIR, folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(ROOT_DIR, folder, f)) and f.endswith(".log")]
-    #     if log_files_path:
-    #         log_files_path += log_path
-    #     else:
-    #         log_files_path = log_path
-    # print(len(log_files_path))
-    log_files_path = askopenfilenames()
+    log_files_path = []
+    if len(sys.argv) > 1:
+        arg_folder = sys.argv[1]
+        if len(sys.argv) > 2:
+            process_name = sys.argv[2]
+        else:
+            process_name = None
+        folders = os.listdir(arg_folder)
+        log_files_path = []
+        for root, _, files in os.walk(arg_folder):
+            if not files:
+                continue
+            files = [os.path.join(root, f) for f in files if f.endswith(".log")]            
+            if files:
+                log_files_path.extend(files)
+        print(len(log_files_path))
+    else:
+        log_files_path = askopenfilenames()
+        process_name = simpledialog.askstring("UiPath žurnalų konvertavimas", "Įveskite pilną ir tikslų proceso pavadinimą arba palikite tuščią visiems procesams konvertuoti")
     # application_window = tk.Tk()
-    process_name = simpledialog.askstring("UiPath žurnalų konvertavimas", "Įveskite pilną ir tikslų proceso pavadinimą arba palikite tuščią visiems procesams konvertuoti")
     uipath_log_parser = UiPathLogsParser(log_files_path, process_name=process_name)
     uipath_log_parser.build_logs_dataframe()
     messagebox.showinfo("UiPath žurnalų konvertavimas",
