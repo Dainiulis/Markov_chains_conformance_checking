@@ -26,3 +26,8 @@ create_dir(ROOT_DIR)
 FAULT_PER_DAUG_PEREJIMU = "Per daug perėjimų"
 FAULT_NEGALIMA_ESAMA_VEIKLA = "Negalima esama veikla"
 FAULT_NEGALIMAS_PEREJIMAS = "Negalimas perėjimas tarp veiklų"
+
+#Params
+MIN_EVENT_RECEIVE_TIME = 600 #seconds
+R = 10 ** -5
+FAULT_RATIO_TO_INFORM = 0.1

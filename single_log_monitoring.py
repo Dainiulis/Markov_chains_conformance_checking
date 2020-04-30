@@ -58,7 +58,7 @@ def single_log_monitoring(file_path):
                         """Stabdom jeigu paskutinis"""
                         if "execution ended\"" in line:
                             executing = False
-                if time.perf_counter() - event_start_time > 600:
+                if time.perf_counter() - event_start_time > constants.MIN_EVENT_RECEIVE_TIME:
                     send_email(["dainius.mieziunas@eso.lt"]
                                 , process_name + " ilgai negaunamas įvykis"
                                 , f"Ilgai negaunamas įvykis. Praėjo {time.perf_counter() - last_event_time}s.")

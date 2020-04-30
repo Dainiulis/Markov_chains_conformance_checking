@@ -67,7 +67,7 @@ class FaultChecker:
         self.faults.append(custom_fault_values.copy())
         logging.error(custom_fault_values)
         if not self.informed_about_faults:
-            if len(self.faults) / self.mean_transition_counts > 0.1:
+            if len(self.faults) / self.mean_transition_counts > constants.FAULT_RATIO_TO_INFORM:
                 send_email(["dainius.mieziunas@eso.lt"], 
                             self.process_name, 
                             f"Pastebėta daug klaidų {len(self.faults)}. Klaidų santykis {len(self.faults) / self.mean_transition_counts}")
@@ -150,7 +150,7 @@ class FaultChecker:
         def __predict_nth_probability_regression():
             exponential_regression_model: ExponentialRegression = transition[Columns.EXPONENTIAL_DECAY_REGRESSION_MODEL.value]
             probability_prediction = exponential_regression_model.predict(self.transition_count)
-            if probability_prediction <= R:
+            if probability_prediction <= constants.R:
                 custom_fault_values[Columns.PROBABILITY.value] = probability_prediction
                 custom_fault_values[Columns.MAX_CASE_TRANSITION_COUNT.value] = transition[
                     Columns.MAX_CASE_TRANSITION_COUNT.value]
