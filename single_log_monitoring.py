@@ -59,7 +59,9 @@ def single_log_monitoring(file_path):
                         if "execution ended\"" in line:
                             executing = False
                 if time.perf_counter() - event_start_time > 600:
-                    send_email(["dainius.mieziunas@eso.lt"], process_name + " ilgai negaunamas įvykis", f"Ilgai negaunamas įvykis. Praėjo {last_event_time}s.")
+                    send_email(["dainius.mieziunas@eso.lt"]
+                                , process_name + " ilgai negaunamas įvykis"
+                                , f"Ilgai negaunamas įvykis. Praėjo {time.perf_counter() - last_event_time}s.")
                     event_start_time = time.perf_counter()
         except PermissionError:
             print("---------------------------------------")
