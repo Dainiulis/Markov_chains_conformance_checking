@@ -13,6 +13,7 @@ import psutil
 from transition_graph import TransitionGraph
 import random
 from helpers import move_old_log_files
+from emails import send_email
 
 def single_log_monitoring(file_path):
     print("Monitoring started...")
@@ -25,6 +26,8 @@ def single_log_monitoring(file_path):
     process_version = ""
     event_times = []
     performance_times = []
+    event_start_time = time.perf_counter()
+    last_event_time = event_start_time
     while executing:
         try:
             with open(file_path, mode='r', encoding='utf-8') as file:
@@ -32,7 +35,8 @@ def single_log_monitoring(file_path):
                 for line in file.readlines():
                     line_no += 1
                     if line_no == last_line + 1:
-                        st = time.perf_counter()
+                        event_start_time = time.perf_counter()
+                        last_event_time = event_start_time
                         last_line = line_no
                         data = get_uipath_log_line_for_conformance_checking(line)
                         if data and not model_loaded:
@@ -50,10 +54,13 @@ def single_log_monitoring(file_path):
                         if data:
                             fault_checker.check_faults(data)
                             event_times.append(data[Columns.TIMESTAMP_DATETIME.value])
-                        performance_times.append(time.perf_counter() - st)
+                        performance_times.append(time.perf_counter() - event_start_time)
                         """Stabdom jeigu paskutinis"""
                         if "execution ended\"" in line:
                             executing = False
+                if time.perf_counter() - event_start_time > 600:
+                    send_email(["dainius.mieziunas@eso.lt"], process_name + " ilgai negaunamas įvykis", f"Ilgai negaunamas įvykis. Praėjo {last_event_time}s.")
+                    event_start_time = time.perf_counter()
         except PermissionError:
             print("---------------------------------------")
             time.sleep(1)

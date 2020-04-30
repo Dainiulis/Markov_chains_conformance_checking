@@ -70,7 +70,7 @@ class FaultChecker:
             if len(self.faults) / self.mean_transition_counts > 0.1:
                 send_email(["dainius.mieziunas@eso.lt"], 
                             self.process_name, 
-                            f"Pastebeta daug klaidu {len(self.faults)}. Klaidu santykis {len(self.faults) / self.mean_transition_counts}")
+                            f"Pastebėta daug klaidų {len(self.faults)}. Klaidų santykis {len(self.faults) / self.mean_transition_counts}")
                 self.informed_about_faults = True
 
         if fault_type not in self.faults_dict.keys():
