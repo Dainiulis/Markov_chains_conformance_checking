@@ -29,6 +29,7 @@ def single_log_monitoring(file_path):
     event_start_time = time.perf_counter()
     last_event_time = event_start_time
     robot_name = ""
+    ligai_negaunamas_ivykis_counter = 0
     while executing:
         try:
             with open(file_path, mode='r', encoding='utf-8') as file:
@@ -60,6 +61,7 @@ def single_log_monitoring(file_path):
                         if "execution ended\"" in line:
                             executing = False
                 if time.perf_counter() - event_start_time > constants.MIN_EVENT_RECEIVE_TIME:
+                    ligai_negaunamas_ivykis_counter += 1
                     send_email(["dainius.mieziunas@eso.lt", "Justina.Kasiuleviciute@eso.lt"]
                                 , f"Robotas {robot_name} procesas {process_name} ilgai negaunamas įvykis"
                                 , f"Ilgai negaunamas įvykis vykstančiame procese {process_name}<br>Procesą vykdo {robot_name}<br>Praėjo {int(time.perf_counter() - last_event_time)} s.")
@@ -92,7 +94,8 @@ def single_log_monitoring(file_path):
                     "faults_log_path": fault_checker.faults_log_file_path,
                     "finish_time": "{0}".format(datetime.now()),
                     "performance_time": performance_time,
-                    "processVersion": process_version}
+                    "processVersion": process_version,
+                    "Ilgai negaunamas įvykis": ligai_negaunamas_ivykis_counter}
     faults_counts = fault_checker.get_fault_counts()
     analysis_row.update(faults_counts)
     try:
